@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "anton musk.md",
+                "file": "example.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "anton musk"
+              "title": "example"
             }
           }
         ],
@@ -114,7 +114,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "anton musk.md",
+                "file": "example.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -133,7 +133,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "anton musk.md",
+                "file": "example.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
@@ -176,7 +176,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "anton musk.md",
+                "file": "example.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
@@ -206,9 +206,9 @@
   },
   "active": "17fa1991ad7a7f1f",
   "lastOpenFiles": [
+    "anton musk.md",
     "Untitled.canvas",
     "Untitled.base",
-    "example.md",
-    "anton musk.md"
+    "example.md"
   ]
 }
