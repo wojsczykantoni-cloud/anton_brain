@@ -9,3 +9,4 @@ Trenuję regularnie od 4 lat (split PPL, progresja podwójna) – to duża czę�
 
 ## Cele
 Chcę nauczyć się budować realne rzeczy na komputerze przy pomocy AI/Claude, żeby zmonetyzować własną pracę – niezależnie od studiów. To na razie kierunek, który dopiero chcę zacząć rozwijać, np. w stronę pomysłów na mikro-SaaS/produkty cyfrowe.
+
