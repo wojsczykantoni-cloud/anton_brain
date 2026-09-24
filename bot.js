@@ -14,7 +14,24 @@ if (!TOKEN || !CHAT_ID) {
 
 const DAILY_DIR = path.join(__dirname, 'daily');
 const TEMPLATE_PATH = path.join(__dirname, 'templates', 'daily.md');
-const IDEAS_HEADING = '## 💡 Pomysły / obserwacje';
+
+const SECTIONS = {
+  note: {
+    heading: '## 💡 Pomysły / obserwacje',
+    label: 'Pomysły / obserwacje',
+    format: (text) => `- ${text}`,
+  },
+  priorytet: {
+    heading: '## 🎯 Priorytety',
+    label: 'Priorytety',
+    format: (text) => `- [ ] ${text}`,
+  },
+  nauka: {
+    heading: '## 📚 Studia / nauka',
+    label: 'Studia / nauka',
+    format: (text) => `- ${text}`,
+  },
+};
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
@@ -41,16 +58,18 @@ function ensureDailyNote(dateStr) {
   return filePath;
 }
 
-function appendIdea(dateStr, text) {
+function appendToSection(dateStr, sectionKey, text) {
+  const section = SECTIONS[sectionKey];
   const filePath = ensureDailyNote(dateStr);
   const content = fs.readFileSync(filePath, 'utf8');
   const lines = content.split('\n');
+  const newLine = section.format(text);
 
-  const headingIndex = lines.findIndex((line) => line.trim() === IDEAS_HEADING);
+  const headingIndex = lines.findIndex((line) => line.trim() === section.heading);
   if (headingIndex === -1) {
     // Sekcja nie istnieje w pliku - dopisz ją na końcu.
     const newLines = content.replace(/\n+$/, '').split('\n');
-    newLines.push('', IDEAS_HEADING, `- ${text}`, '');
+    newLines.push('', section.heading, newLine, '');
     fs.writeFileSync(filePath, newLines.join('\n'), 'utf8');
     return;
   }
@@ -70,7 +89,7 @@ function appendIdea(dateStr, text) {
     insertIndex--;
   }
 
-  lines.splice(insertIndex, 0, `- ${text}`);
+  lines.splice(insertIndex, 0, newLine);
   fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
 }
 
@@ -112,6 +131,35 @@ bot.onText(/^\/brief$/, async (msg) => {
   await sendLong(msg.chat.id, content);
 });
 
+// Rejestruje komendę /<name> <tekst>, dopisującą tekst do danej sekcji.
+function registerSectionCommand(name, sectionKey) {
+  const regex = new RegExp(`^\\/${name}(?:@\\w+)?(?:\\s+([\\s\\S]+))?$`);
+  bot.onText(regex, async (msg, match) => {
+    if (!isAuthorized(msg)) return;
+
+    const text = match[1] && match[1].trim();
+    if (!text) {
+      await bot.sendMessage(msg.chat.id, `Podaj treść, np. /${name} treść wiadomości.`);
+      return;
+    }
+
+    const dateStr = todayISO();
+    const section = SECTIONS[sectionKey];
+
+    try {
+      appendToSection(dateStr, sectionKey, text);
+      await bot.sendMessage(msg.chat.id, `✅ Dodano do sekcji „${section.label}”.`);
+    } catch (err) {
+      console.error('Błąd przy zapisie notatki:', err);
+      await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać notatki.');
+    }
+  });
+}
+
+registerSectionCommand('priorytet', 'priorytet');
+registerSectionCommand('nauka', 'nauka');
+registerSectionCommand('note', 'note');
+
 bot.on('message', async (msg) => {
   if (!isAuthorized(msg)) return;
   if (!msg.text) return; // interesują nas tylko wiadomości tekstowe
@@ -120,8 +168,8 @@ bot.on('message', async (msg) => {
   const dateStr = todayISO();
 
   try {
-    appendIdea(dateStr, msg.text);
-    await bot.sendMessage(msg.chat.id, '✅ Dodano do dzisiejszych pomysłów.');
+    appendToSection(dateStr, 'note', msg.text);
+    await bot.sendMessage(msg.chat.id, `✅ Dodano do sekcji „${SECTIONS.note.label}”.`);
   } catch (err) {
     console.error('Błąd przy zapisie notatki:', err);
     await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać notatki.');
