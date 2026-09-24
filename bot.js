@@ -38,29 +38,33 @@ const SECTIONS = {
 // angielskie wyrażenia zrozumiałe dla parsera dat w `ical` (go-eventkit).
 // To celowo prosty, heurystyczny parser (nie pełne NLP) - wystarczający do
 // wyłuskania "jutro 14:00" itp. z końca/środka wiadomości.
+// Uwaga: zwykłe \b nie rozpoznaje polskich znaków (ą, ę, ń, ó, ś, ł, ż, ź)
+// jako części słowa, więc granice słów budujemy ręcznie przez \p{L}/\p{N}
+// (wymaga flagi "u"), zamiast polegać na \b przy wyrazach typu "godzinę".
+const NB = '(?<![\\p{L}\\p{N}])';
+const NA = '(?![\\p{L}\\p{N}])';
 const DATE_PATTERNS = [
-  { re: /\bza\s+(\d+)\s+dni\w*\b/gi, translate: (m, n) => `in ${n} days` },
-  { re: /\bza\s+(\d+)\s+godzin\w*\b/gi, translate: (m, n) => `in ${n} hours` },
-  { re: /\bza\s+(\d+)\s+minut\w*\b/gi, translate: (m, n) => `in ${n} minutes` },
-  { re: /\bza\s+(\d+)\s+tydz\w*\b/gi, translate: (m, n) => `in ${n} weeks` },
-  { re: /\bza\s+(\d+)\s+tygodni\w*\b/gi, translate: (m, n) => `in ${n} weeks` },
-  { re: /\bza\s+p[oó][lł]\s+godziny\b/gi, translate: () => 'in 30 minutes' },
-  { re: /\bza\s+kwadrans\b/gi, translate: () => 'in 15 minutes' },
-  { re: /\bza\s+godzin[eę]\b/gi, translate: () => 'in 1 hour' },
-  { re: /\bza\s+tydzie[nń]\b/gi, translate: () => 'in 1 week' },
-  { re: /\bpojutrze\b/gi, translate: () => 'in 2 days' },
-  { re: /\b(dzisiaj|dziś)\b/gi, translate: () => 'today' },
-  { re: /\bjutro\b/gi, translate: () => 'tomorrow' },
-  { re: /\bwczoraj\b/gi, translate: () => 'yesterday' },
-  { re: /\bponiedzia[lł]ek\b/gi, translate: () => 'monday' },
-  { re: /\bwtorek\b/gi, translate: () => 'tuesday' },
-  { re: /\b[sś]rod[eęya]\b/gi, translate: () => 'wednesday' },
-  { re: /\bczwartek\b/gi, translate: () => 'thursday' },
-  { re: /\bpi[aą]tek\b/gi, translate: () => 'friday' },
-  { re: /\bsobot[eęya]\b/gi, translate: () => 'saturday' },
-  { re: /\bniedziel[eęia]\b/gi, translate: () => 'sunday' },
-  { re: /\b\d{4}-\d{2}-\d{2}\b/g, translate: (m) => m },
-  { re: /\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/g, translate: (m, hh, mm) => `${hh}:${mm}` },
+  { re: new RegExp(`${NB}za\\s+(\\d+)\\s+dni\\p{L}*${NA}`, 'giu'), translate: (m, n) => `in ${n} days` },
+  { re: new RegExp(`${NB}za\\s+(\\d+)\\s+godzin\\p{L}*${NA}`, 'giu'), translate: (m, n) => `in ${n} hours` },
+  { re: new RegExp(`${NB}za\\s+(\\d+)\\s+minut\\p{L}*${NA}`, 'giu'), translate: (m, n) => `in ${n} minutes` },
+  { re: new RegExp(`${NB}za\\s+(\\d+)\\s+tyg\\p{L}*${NA}`, 'giu'), translate: (m, n) => `in ${n} weeks` },
+  { re: new RegExp(`${NB}za\\s+p[oó][lł]\\s+godzin\\p{L}*${NA}`, 'giu'), translate: () => 'in 30 minutes' },
+  { re: new RegExp(`${NB}za\\s+kwadrans${NA}`, 'giu'), translate: () => 'in 15 minutes' },
+  { re: new RegExp(`${NB}za\\s+godzin[eę]${NA}`, 'giu'), translate: () => 'in 1 hour' },
+  { re: new RegExp(`${NB}za\\s+tydzie[nń]${NA}`, 'giu'), translate: () => 'in 1 week' },
+  { re: new RegExp(`${NB}pojutrze${NA}`, 'giu'), translate: () => 'in 2 days' },
+  { re: new RegExp(`${NB}(dzisiaj|dziś)${NA}`, 'giu'), translate: () => 'today' },
+  { re: new RegExp(`${NB}jutro${NA}`, 'giu'), translate: () => 'tomorrow' },
+  { re: new RegExp(`${NB}wczoraj${NA}`, 'giu'), translate: () => 'yesterday' },
+  { re: new RegExp(`${NB}poniedzia[lł]ek${NA}`, 'giu'), translate: () => 'monday' },
+  { re: new RegExp(`${NB}wtorek${NA}`, 'giu'), translate: () => 'tuesday' },
+  { re: new RegExp(`${NB}[sś]rod[eęya]${NA}`, 'giu'), translate: () => 'wednesday' },
+  { re: new RegExp(`${NB}czwartek${NA}`, 'giu'), translate: () => 'thursday' },
+  { re: new RegExp(`${NB}pi[aą]tek${NA}`, 'giu'), translate: () => 'friday' },
+  { re: new RegExp(`${NB}sobot[eęya]${NA}`, 'giu'), translate: () => 'saturday' },
+  { re: new RegExp(`${NB}niedziel[eęia]${NA}`, 'giu'), translate: () => 'sunday' },
+  { re: new RegExp(`${NB}\\d{4}-\\d{2}-\\d{2}${NA}`, 'gu'), translate: (m) => m },
+  { re: new RegExp(`${NB}([01]?\\d|2[0-3])[:.]([0-5]\\d)${NA}`, 'gu'), translate: (m, hh, mm) => `${hh}:${mm}` },
 ];
 
 // Znajduje w tekście fragmenty pasujące do DATE_PATTERNS, wycina je z tekstu
