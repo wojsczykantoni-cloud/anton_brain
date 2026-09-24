@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
 const TelegramBot = require('node-telegram-bot-api');
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -32,6 +33,133 @@ const SECTIONS = {
     format: (text) => `- ${text}`,
   },
 };
+
+// Rozpoznaje proste polskie zwroty czasowe w tekście i tłumaczy je na
+// angielskie wyrażenia zrozumiałe dla parsera dat w `ical` (go-eventkit).
+// To celowo prosty, heurystyczny parser (nie pełne NLP) - wystarczający do
+// wyłuskania "jutro 14:00" itp. z końca/środka wiadomości.
+const DATE_PATTERNS = [
+  { re: /\bza\s+(\d+)\s+dni\w*\b/gi, translate: (m, n) => `in ${n} days` },
+  { re: /\bza\s+(\d+)\s+godzin\w*\b/gi, translate: (m, n) => `in ${n} hours` },
+  { re: /\bza\s+(\d+)\s+minut\w*\b/gi, translate: (m, n) => `in ${n} minutes` },
+  { re: /\bza\s+(\d+)\s+tydz\w*\b/gi, translate: (m, n) => `in ${n} weeks` },
+  { re: /\bza\s+(\d+)\s+tygodni\w*\b/gi, translate: (m, n) => `in ${n} weeks` },
+  { re: /\bza\s+p[oó][lł]\s+godziny\b/gi, translate: () => 'in 30 minutes' },
+  { re: /\bza\s+kwadrans\b/gi, translate: () => 'in 15 minutes' },
+  { re: /\bza\s+godzin[eę]\b/gi, translate: () => 'in 1 hour' },
+  { re: /\bza\s+tydzie[nń]\b/gi, translate: () => 'in 1 week' },
+  { re: /\bpojutrze\b/gi, translate: () => 'in 2 days' },
+  { re: /\b(dzisiaj|dziś)\b/gi, translate: () => 'today' },
+  { re: /\bjutro\b/gi, translate: () => 'tomorrow' },
+  { re: /\bwczoraj\b/gi, translate: () => 'yesterday' },
+  { re: /\bponiedzia[lł]ek\b/gi, translate: () => 'monday' },
+  { re: /\bwtorek\b/gi, translate: () => 'tuesday' },
+  { re: /\b[sś]rod[eęya]\b/gi, translate: () => 'wednesday' },
+  { re: /\bczwartek\b/gi, translate: () => 'thursday' },
+  { re: /\bpi[aą]tek\b/gi, translate: () => 'friday' },
+  { re: /\bsobot[eęya]\b/gi, translate: () => 'saturday' },
+  { re: /\bniedziel[eęia]\b/gi, translate: () => 'sunday' },
+  { re: /\b\d{4}-\d{2}-\d{2}\b/g, translate: (m) => m },
+  { re: /\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/g, translate: (m, hh, mm) => `${hh}:${mm}` },
+];
+
+// Znajduje w tekście fragmenty pasujące do DATE_PATTERNS, wycina je z tekstu
+// (dając tytuł wydarzenia) i składa z nich wyrażenie czasu dla `ical --start`.
+function extractDateTime(text) {
+  const matches = [];
+  for (const { re, translate } of DATE_PATTERNS) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      matches.push({
+        start: m.index,
+        end: m.index + m[0].length,
+        original: m[0],
+        translated: translate(...m),
+      });
+    }
+  }
+
+  if (matches.length === 0) {
+    return null;
+  }
+
+  matches.sort((a, b) => a.start - b.start);
+
+  // Usuń nakładające się dopasowania, zachowując pierwsze (po pozycji).
+  const spans = [];
+  let lastEnd = -1;
+  for (const m of matches) {
+    if (m.start >= lastEnd) {
+      spans.push(m);
+      lastEnd = m.end;
+    }
+  }
+
+  const minStart = spans[0].start;
+  const maxEnd = spans[spans.length - 1].end;
+
+  const title = (text.slice(0, minStart) + ' ' + text.slice(maxEnd))
+    .replace(/\s+(w|we|o|na)\s*$/i, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return {
+    title: title || 'Wydarzenie',
+    startExpr: spans.map((s) => s.translated).join(' '),
+    recognizedText: spans.map((s) => s.original).join(' '),
+  };
+}
+
+// Bezpiecznie wywołuje `ical add` - execFile przekazuje argumenty jako
+// tablicę bez powłoki, więc treść od użytkownika nie może wstrzyknąć
+// dodatkowych poleceń ani flag interpretowanych przez shell.
+function icalAdd(title, startExpr) {
+  return new Promise((resolve, reject) => {
+    execFile('ical', ['add', title, '--start', startExpr], (error, stdout, stderr) => {
+      if (error) {
+        const firstLine = (stderr || error.message).split('\n')[0].replace(/^Error:\s*/, '');
+        reject(new Error(firstLine || 'nieznany błąd'));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+// Po utworzeniu wydarzenia doszukuje się go po tytule, żeby potwierdzić
+// dokładny czas rozpoznany przez `ical` (a nie tylko nasze przypuszczenie).
+function findCreatedEvent(title) {
+  return new Promise((resolve) => {
+    execFile(
+      'ical',
+      ['search', title, '--from', 'today', '--to', 'in 90 days', '-o', 'json'],
+      (error, stdout) => {
+        if (error) {
+          resolve(null);
+          return;
+        }
+        try {
+          const events = JSON.parse(stdout);
+          if (!Array.isArray(events) || events.length === 0) {
+            resolve(null);
+            return;
+          }
+          events.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          resolve(events[0]);
+        } catch {
+          resolve(null);
+        }
+      }
+    );
+  });
+}
+
+function formatLocalDateTime(isoUtc) {
+  const d = new Date(isoUtc);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
@@ -159,6 +287,35 @@ function registerSectionCommand(name, sectionKey) {
 registerSectionCommand('priorytet', 'priorytet');
 registerSectionCommand('nauka', 'nauka');
 registerSectionCommand('note', 'note');
+
+bot.onText(/^\/event(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
+  if (!isAuthorized(msg)) return;
+
+  const raw = match[1] && match[1].trim();
+  if (!raw) {
+    await bot.sendMessage(msg.chat.id, 'Podaj treść, np. /event Spotkanie z promotorem jutro 14:00.');
+    return;
+  }
+
+  const parsed = extractDateTime(raw);
+  if (!parsed) {
+    await bot.sendMessage(
+      msg.chat.id,
+      '❌ Nie rozpoznałem daty/godziny w treści. Spróbuj np. „jutro 14:00”, „za 2 dni”, „piątek 10:00” albo daty ISO (2026-03-15 14:00).'
+    );
+    return;
+  }
+
+  try {
+    await icalAdd(parsed.title, parsed.startExpr);
+    const event = await findCreatedEvent(parsed.title);
+    const whenLabel = event ? formatLocalDateTime(event.start_date) : parsed.recognizedText;
+    await bot.sendMessage(msg.chat.id, `✅ Dodano wydarzenie „${parsed.title}” — ${whenLabel}.`);
+  } catch (err) {
+    console.error('Błąd przy tworzeniu wydarzenia:', err);
+    await bot.sendMessage(msg.chat.id, `❌ Nie udało się utworzyć wydarzenia: ${err.message}`);
+  }
+});
 
 bot.on('message', async (msg) => {
   if (!isAuthorized(msg)) return;
