@@ -224,6 +224,46 @@ function formatLocalDateTime(isoUtc) {
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// Szuka wydarzeń pasujących do fragmentu tytułu - execFile z argumentami
+// jako tablicą, więc treść od użytkownika nie trafia do powłoki.
+function icalSearch(query) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'ical',
+      ['search', query, '--from', '365 days ago', '--to', 'in 365 days', '-o', 'json'],
+      (error, stdout, stderr) => {
+        if (error) {
+          const firstLine = (stderr || error.message).split('\n')[0].replace(/^Error:\s*/, '');
+          reject(new Error(firstLine || 'nieznany błąd'));
+          return;
+        }
+        try {
+          const events = JSON.parse(stdout || '[]');
+          resolve(Array.isArray(events) ? events : []);
+        } catch {
+          reject(new Error('Nie udało się odczytać wyniku wyszukiwania.'));
+        }
+      }
+    );
+  });
+}
+
+// Usuwa wydarzenie po pełnym ID (--id = dokładne dopasowanie, jedno
+// wydarzenie) i bez interaktywnego potwierdzenia (--force), bo działamy
+// z bota, nie z terminala.
+function icalDeleteById(id) {
+  return new Promise((resolve, reject) => {
+    execFile('ical', ['delete', '--id', id, '--force'], (error, stdout, stderr) => {
+      if (error) {
+        const firstLine = (stderr || error.message).split('\n')[0].replace(/^Error:\s*/, '');
+        reject(new Error(firstLine || 'nieznany błąd'));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 function todayISO() {
@@ -377,6 +417,46 @@ bot.onText(/^\/event(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   } catch (err) {
     console.error('Błąd przy tworzeniu wydarzenia:', err);
     await bot.sendMessage(msg.chat.id, `❌ Nie udało się utworzyć wydarzenia: ${err.message}`);
+  }
+});
+
+bot.onText(/^\/usun(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
+  if (!isAuthorized(msg)) return;
+
+  const query = match[1] && match[1].trim();
+  if (!query) {
+    await bot.sendMessage(msg.chat.id, 'Podaj fragment tytułu, np. /usun spotkanie z promotorem.');
+    return;
+  }
+
+  try {
+    const events = await icalSearch(query);
+
+    if (events.length === 0) {
+      await bot.sendMessage(msg.chat.id, `Nie znaleziono wydarzenia pasującego do „${query}”.`);
+      return;
+    }
+
+    if (events.length > 1) {
+      const list = events
+        .map((e) => `• ${e.title} — ${formatLocalDateTime(e.start_date)}`)
+        .join('\n');
+      await bot.sendMessage(
+        msg.chat.id,
+        `Znaleziono ${events.length} pasujących wydarzeń, podaj dokładniejszy fragment tytułu:\n${list}`
+      );
+      return;
+    }
+
+    const event = events[0];
+    await icalDeleteById(event.id);
+    await bot.sendMessage(
+      msg.chat.id,
+      `🗑️ Usunięto wydarzenie „${event.title}” — ${formatLocalDateTime(event.start_date)}.`
+    );
+  } catch (err) {
+    console.error('Błąd przy usuwaniu wydarzenia:', err);
+    await bot.sendMessage(msg.chat.id, `❌ Nie udało się usunąć wydarzenia: ${err.message}`);
   }
 });
 
