@@ -206,6 +206,7 @@
   },
   "active": "17fa1991ad7a7f1f",
   "lastOpenFiles": [
+    "logs/bot.log",
     "scripts/morning-brief.sh",
     "scripts",
     "logs",
@@ -221,7 +222,6 @@
     "node_modules/@cypress/request-promise/LICENSE",
     "node_modules/@cypress/request-promise/lib/rp.js",
     "node_modules/@cypress/request-promise/lib",
-    "node_modules/request/node_modules/form-data/yarn.lock",
     "node_modules/request/node_modules/form-data/README.md",
     "node_modules/@cypress/request-promise/node_modules/tough-cookie/README.md",
     "node_modules/request/node_modules/qs/README.md",
