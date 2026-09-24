@@ -34,8 +34,10 @@ const SECTIONS = {
   },
 };
 
-// Rozpoznaje proste polskie zwroty czasowe w tekście i tłumaczy je na
-// angielskie wyrażenia zrozumiałe dla parsera dat w `ical` (go-eventkit).
+// Rozpoznaje proste polskie zwroty czasowe w tekście i sam wylicza z nich
+// docelową datę/godzinę w JS (zamiast przekazywać `ical` surowe angielskie
+// frazy do złożenia) - dzięki temu kombinacje typu "za 3 dni 9:00" dają
+// jednoznaczny wynik, którego sam `ical` nie potrafiłby połączyć.
 // To celowo prosty, heurystyczny parser (nie pełne NLP) - wystarczający do
 // wyłuskania "jutro 14:00" itp. z końca/środka wiadomości.
 // Uwaga: zwykłe \b nie rozpoznaje polskich znaków (ą, ę, ń, ó, ś, ł, ż, ź)
@@ -43,43 +45,90 @@ const SECTIONS = {
 // (wymaga flagi "u"), zamiast polegać na \b przy wyrazach typu "godzinę".
 const NB = '(?<![\\p{L}\\p{N}])';
 const NA = '(?![\\p{L}\\p{N}])';
+
+function startOfDay(d) {
+  const r = new Date(d);
+  r.setHours(0, 0, 0, 0);
+  return r;
+}
+
+function addDays(base, days) {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+// Najbliższe wystąpienie danego dnia tygodnia w przyszłości (nigdy "dziś") -
+// zgodnie z konwencją "next monday"/"friday" z parsera ical (zawsze do przodu).
+function nextWeekday(base, targetDow) {
+  const d = new Date(base);
+  const diff = ((targetDow - d.getDay()) + 7) % 7 || 7;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+// kind 'day'    -> data bazowa o północy, chyba że dopisano też godzinę
+// kind 'offset' -> data bazowa liczona od "teraz" (zachowuje bieżącą godzinę,
+//                  jak "za 3 dni" bez podanej godziny), chyba że dopisano godzinę
+// kind 'time'   -> sama godzina, nadpisuje godzinę/minuty daty bazowej
 const DATE_PATTERNS = [
-  { re: new RegExp(`${NB}za\\s+(\\d+)\\s+dni\\p{L}*${NA}`, 'giu'), translate: (m, n) => `in ${n} days` },
-  { re: new RegExp(`${NB}za\\s+(\\d+)\\s+godzin\\p{L}*${NA}`, 'giu'), translate: (m, n) => `in ${n} hours` },
-  { re: new RegExp(`${NB}za\\s+(\\d+)\\s+minut\\p{L}*${NA}`, 'giu'), translate: (m, n) => `in ${n} minutes` },
-  { re: new RegExp(`${NB}za\\s+(\\d+)\\s+tyg\\p{L}*${NA}`, 'giu'), translate: (m, n) => `in ${n} weeks` },
-  { re: new RegExp(`${NB}za\\s+p[oó][lł]\\s+godzin\\p{L}*${NA}`, 'giu'), translate: () => 'in 30 minutes' },
-  { re: new RegExp(`${NB}za\\s+kwadrans${NA}`, 'giu'), translate: () => 'in 15 minutes' },
-  { re: new RegExp(`${NB}za\\s+godzin[eę]${NA}`, 'giu'), translate: () => 'in 1 hour' },
-  { re: new RegExp(`${NB}za\\s+tydzie[nń]${NA}`, 'giu'), translate: () => 'in 1 week' },
-  { re: new RegExp(`${NB}pojutrze${NA}`, 'giu'), translate: () => 'in 2 days' },
-  { re: new RegExp(`${NB}(dzisiaj|dziś)${NA}`, 'giu'), translate: () => 'today' },
-  { re: new RegExp(`${NB}jutro${NA}`, 'giu'), translate: () => 'tomorrow' },
-  { re: new RegExp(`${NB}wczoraj${NA}`, 'giu'), translate: () => 'yesterday' },
-  { re: new RegExp(`${NB}poniedzia[lł]ek${NA}`, 'giu'), translate: () => 'monday' },
-  { re: new RegExp(`${NB}wtorek${NA}`, 'giu'), translate: () => 'tuesday' },
-  { re: new RegExp(`${NB}[sś]rod[eęya]${NA}`, 'giu'), translate: () => 'wednesday' },
-  { re: new RegExp(`${NB}czwartek${NA}`, 'giu'), translate: () => 'thursday' },
-  { re: new RegExp(`${NB}pi[aą]tek${NA}`, 'giu'), translate: () => 'friday' },
-  { re: new RegExp(`${NB}sobot[eęya]${NA}`, 'giu'), translate: () => 'saturday' },
-  { re: new RegExp(`${NB}niedziel[eęia]${NA}`, 'giu'), translate: () => 'sunday' },
-  { re: new RegExp(`${NB}\\d{4}-\\d{2}-\\d{2}${NA}`, 'gu'), translate: (m) => m },
-  { re: new RegExp(`${NB}([01]?\\d|2[0-3])[:.]([0-5]\\d)${NA}`, 'gu'), translate: (m, hh, mm) => `${hh}:${mm}` },
+  { kind: 'offset', re: new RegExp(`${NB}za\\s+(\\d+)\\s+dni\\p{L}*${NA}`, 'giu'), resolve: (m, n, now) => addDays(now, Number(n)) },
+  { kind: 'offset', re: new RegExp(`${NB}za\\s+(\\d+)\\s+godzin\\p{L}*${NA}`, 'giu'), resolve: (m, n, now) => new Date(now.getTime() + Number(n) * 3600000) },
+  { kind: 'offset', re: new RegExp(`${NB}za\\s+(\\d+)\\s+minut\\p{L}*${NA}`, 'giu'), resolve: (m, n, now) => new Date(now.getTime() + Number(n) * 60000) },
+  { kind: 'offset', re: new RegExp(`${NB}za\\s+(\\d+)\\s+tyg\\p{L}*${NA}`, 'giu'), resolve: (m, n, now) => addDays(now, Number(n) * 7) },
+  { kind: 'offset', re: new RegExp(`${NB}za\\s+p[oó][lł]\\s+godzin\\p{L}*${NA}`, 'giu'), resolve: (m, now) => new Date(now.getTime() + 30 * 60000) },
+  { kind: 'offset', re: new RegExp(`${NB}za\\s+kwadrans${NA}`, 'giu'), resolve: (m, now) => new Date(now.getTime() + 15 * 60000) },
+  { kind: 'offset', re: new RegExp(`${NB}za\\s+godzin[eę]${NA}`, 'giu'), resolve: (m, now) => new Date(now.getTime() + 3600000) },
+  { kind: 'offset', re: new RegExp(`${NB}za\\s+tydzie[nń]${NA}`, 'giu'), resolve: (m, now) => addDays(now, 7) },
+  { kind: 'day', re: new RegExp(`${NB}pojutrze${NA}`, 'giu'), resolve: (m, now) => startOfDay(addDays(now, 2)) },
+  { kind: 'day', re: new RegExp(`${NB}(?:dzisiaj|dziś)${NA}`, 'giu'), resolve: (m, now) => startOfDay(now) },
+  { kind: 'day', re: new RegExp(`${NB}jutro${NA}`, 'giu'), resolve: (m, now) => startOfDay(addDays(now, 1)) },
+  { kind: 'day', re: new RegExp(`${NB}wczoraj${NA}`, 'giu'), resolve: (m, now) => startOfDay(addDays(now, -1)) },
+  { kind: 'day', re: new RegExp(`${NB}poniedzia[lł]ek${NA}`, 'giu'), resolve: (m, now) => startOfDay(nextWeekday(now, 1)) },
+  { kind: 'day', re: new RegExp(`${NB}wtorek${NA}`, 'giu'), resolve: (m, now) => startOfDay(nextWeekday(now, 2)) },
+  { kind: 'day', re: new RegExp(`${NB}[sś]rod[eęya]${NA}`, 'giu'), resolve: (m, now) => startOfDay(nextWeekday(now, 3)) },
+  { kind: 'day', re: new RegExp(`${NB}czwartek${NA}`, 'giu'), resolve: (m, now) => startOfDay(nextWeekday(now, 4)) },
+  { kind: 'day', re: new RegExp(`${NB}pi[aą]tek${NA}`, 'giu'), resolve: (m, now) => startOfDay(nextWeekday(now, 5)) },
+  { kind: 'day', re: new RegExp(`${NB}sobot[eęya]${NA}`, 'giu'), resolve: (m, now) => startOfDay(nextWeekday(now, 6)) },
+  { kind: 'day', re: new RegExp(`${NB}niedziel[eęia]${NA}`, 'giu'), resolve: (m, now) => startOfDay(nextWeekday(now, 0)) },
+  {
+    kind: 'day',
+    re: new RegExp(`${NB}(\\d{4})-(\\d{2})-(\\d{2})${NA}`, 'gu'),
+    resolve: (m, y, mo, d) => new Date(Number(y), Number(mo) - 1, Number(d)),
+  },
+  {
+    kind: 'time',
+    re: new RegExp(`${NB}([01]?\\d|2[0-3])[:.]([0-5]\\d)${NA}`, 'gu'),
+    resolve: (m, hh, mm) => ({ hour: Number(hh), minute: Number(mm) }),
+  },
 ];
 
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+// Format bez strefy czasowej ("YYYY-MM-DD HH:MM"), który `ical` interpretuje
+// jako czas lokalny - jednoznaczny, w przeciwieństwie do angielskich fraz
+// łączonych przez sam `ical` (stąd cała reszta liczenia dzieje się tutaj).
+function formatIcalDateTime(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 // Znajduje w tekście fragmenty pasujące do DATE_PATTERNS, wycina je z tekstu
-// (dając tytuł wydarzenia) i składa z nich wyrażenie czasu dla `ical --start`.
-function extractDateTime(text) {
+// (dając tytuł wydarzenia) i wylicza z nich konkretną datę/godzinę.
+function resolveEventDateTime(text, now = new Date()) {
   const matches = [];
-  for (const { re, translate } of DATE_PATTERNS) {
-    re.lastIndex = 0;
+  for (const pattern of DATE_PATTERNS) {
+    pattern.re.lastIndex = 0;
     let m;
-    while ((m = re.exec(text)) !== null) {
+    while ((m = pattern.re.exec(text)) !== null) {
       matches.push({
         start: m.index,
         end: m.index + m[0].length,
         original: m[0],
-        translated: translate(...m),
+        kind: pattern.kind,
+        args: m,
+        resolve: pattern.resolve,
       });
     }
   }
@@ -100,6 +149,16 @@ function extractDateTime(text) {
     }
   }
 
+  const dayOrOffset = spans.find((s) => s.kind === 'day' || s.kind === 'offset');
+  const timeSpan = spans.find((s) => s.kind === 'time');
+
+  let target = dayOrOffset ? dayOrOffset.resolve(...dayOrOffset.args, now) : startOfDay(now);
+  if (timeSpan) {
+    const { hour, minute } = timeSpan.resolve(...timeSpan.args);
+    target = new Date(target);
+    target.setHours(hour, minute, 0, 0);
+  }
+
   const minStart = spans[0].start;
   const maxEnd = spans[spans.length - 1].end;
 
@@ -110,7 +169,7 @@ function extractDateTime(text) {
 
   return {
     title: title || 'Wydarzenie',
-    startExpr: spans.map((s) => s.translated).join(' '),
+    startIso: formatIcalDateTime(target),
     recognizedText: spans.map((s) => s.original).join(' '),
   };
 }
@@ -301,7 +360,7 @@ bot.onText(/^\/event(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
     return;
   }
 
-  const parsed = extractDateTime(raw);
+  const parsed = resolveEventDateTime(raw);
   if (!parsed) {
     await bot.sendMessage(
       msg.chat.id,
@@ -311,7 +370,7 @@ bot.onText(/^\/event(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   }
 
   try {
-    await icalAdd(parsed.title, parsed.startExpr);
+    await icalAdd(parsed.title, parsed.startIso);
     const event = await findCreatedEvent(parsed.title);
     const whenLabel = event ? formatLocalDateTime(event.start_date) : parsed.recognizedText;
     await bot.sendMessage(msg.chat.id, `✅ Dodano wydarzenie „${parsed.title}” — ${whenLabel}.`);
