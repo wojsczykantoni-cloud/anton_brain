@@ -191,6 +191,8 @@
   },
   "active": "5e3933967c19d52c",
   "lastOpenFiles": [
+    "daily/2026-09-26.md.tmp",
+    "daily/2026-09-26.md",
     "daily/2026-09-25.md",
     "daily/2026-09-23.md",
     "anton musk.md",
@@ -225,8 +227,6 @@
     "node_modules/@cypress/request/README.md",
     "node_modules/request/node_modules/jsprim/README.md",
     "node_modules/request/node_modules/jsprim/CONTRIBUTING.md",
-    "node_modules/request/node_modules/jsprim/CHANGES.md",
-    "node_modules/readable-stream/node_modules/safe-buffer/README.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
