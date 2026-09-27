@@ -191,6 +191,7 @@
   },
   "active": "5e3933967c19d52c",
   "lastOpenFiles": [
+    "daily/2026-09-27.md",
     "daily/2026-09-26.md.tmp",
     "daily/2026-09-26.md",
     "daily/2026-09-25.md",
@@ -210,7 +211,6 @@
     "node_modules/@cypress/request-promise/README.md",
     "node_modules/@cypress/request-promise/package.json",
     "node_modules/@cypress/request-promise/errors.js",
-    "node_modules/@cypress/request-promise/LICENSE",
     "node_modules/request/node_modules/form-data/README.md",
     "node_modules/@cypress/request-promise/node_modules/tough-cookie/README.md",
     "node_modules/request/node_modules/qs/README.md",
