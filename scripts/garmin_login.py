@@ -58,7 +58,9 @@ def login() -> Garmin:
     email, password = prompt_credentials()
     try:
         garmin = Garmin(email=email, password=password, prompt_mfa=prompt_mfa)
-        garmin.login()
+        # Passing TOKENSTORE here makes the library persist the session
+        # tokens to that directory itself once login succeeds.
+        garmin.login(TOKENSTORE)
     except (
         GarminConnectAuthenticationError,
         GarminConnectConnectionError,
@@ -71,7 +73,6 @@ def login() -> Garmin:
         # Drop credentials from memory as soon as we're done with them.
         del password
 
-    garmin.garth.dump(TOKENSTORE)
     print(f"Zalogowano i zapisano tokeny sesji w '{TOKENSTORE}'.")
     return garmin
 
