@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Health Dashboard</title>
+<style>
+:root {
+  --bg: #0b0e14;
+  --bg-card: #141821;
+  --text: #e6e9ef;
+  --text-dim: #8b93a3;
+  --border: #232838;
+  --grid-line: #1c212e;
+
+  --c-deep: #7c6fe0;
+  --c-light: #5fb3d9;
+  --c-rem: #f2b84b;
+  --c-awake: #5b6472;
+
+  --c-hrv: #5b9dd9;
+  --c-rhr: #e5735a;
+  --c-sleep-bar: #43c6ac;
+  --c-battery: #43c6ac;
+  --c-readiness: #7c6fe0;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f5f7;
+    --bg-card: #ffffff;
+    --text: #1a1d24;
+    --text-dim: #5b6472;
+    --border: #e2e5ea;
+    --grid-line: #edeff3;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+header {
+  padding: 28px 24px 8px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+header h1 {
+  margin: 0 0 4px;
+  font-size: 1.6rem;
+  font-weight: 650;
+}
+
+header .meta {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+main.grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px 24px 48px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px 14px;
+}
+
+.card h2 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.stat-row { margin-bottom: 10px; }
+
+.stat-big {
+  font-size: 2rem;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.stat-sub, .tile-sub {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin: 2px 0 10px;
+}
+
+.stat-sub b, .tile-sub b { color: var(--text); font-weight: 600; }
+
+.dim { color: var(--text-dim); }
+
+.chart { width: 100%; height: auto; display: block; }
+
+.grid-line { stroke: var(--grid-line); stroke-width: 1; }
+
+.axis-label {
+  fill: var(--text-dim);
+  font-size: 10px;
+}
+
+.baseline-band { fill: var(--c-hrv); opacity: 0.12; }
+
+.phase-bar { width: 100%; height: auto; display: block; border-radius: 4px; overflow: hidden; }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 10px;
+  font-size: 0.82rem;
+}
+
+.legend-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); }
+
+.legend-item i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.legend-item b { color: var(--text); font-weight: 600; }
+
+.mini-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mini-stats > div {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mini-stats span.dim { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.mini-stats b { font-size: 1.05rem; }
+
+.gauge-row { display: flex; align-items: center; gap: 20px; }
+
+.gauge { width: 160px; height: auto; }
+
+.gauge-score { font-size: 34px; font-weight: 700; fill: var(--text); }
+
+.gauge-label .dim { font-size: 0.8rem; }
+
+.empty-msg { color: var(--text-dim); font-size: 0.9rem; padding: 20px 0; }
+
+footer {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px 32px;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Health Dashboard</h1>
+  <p class="meta">Wygenerowano: 28 września 2026, 17:27 &middot; Zakres danych: 30.08 – 28.09</p>
+</header>
+<main class="grid">
+<section class="card"><h2>Ostatnia noc (28.09)</h2>
+<div class="stat-row">
+  <div class="stat-big">8h 20m</div>
+  <div class="stat-sub">Ocena snu: <b>93/100 &middot; Doskonały</b></div>
+</div>
+<svg viewBox="0 0 560 28" class="phase-bar" role="img" aria-label="Fazy snu"><rect x="0.0" y="0" width="81.0" height="28" fill="var(--c-deep)" /><rect x="81.0" y="0" width="358.2" height="28" fill="var(--c-light)" /><rect x="439.1" y="0" width="116.4" height="28" fill="var(--c-rem)" /><rect x="555.6" y="0" width="4.4" height="28" fill="var(--c-awake)" /></svg><div class="legend"><span class="legend-item"><i style="background:var(--c-deep)"></i>Głęboki <b>1h 13m</b> <span class="dim">(14%)</span></span><span class="legend-item"><i style="background:var(--c-light)"></i>Lekki <b>5h 23m</b> <span class="dim">(64%)</span></span><span class="legend-item"><i style="background:var(--c-rem)"></i>REM <b>1h 45m</b> <span class="dim">(21%)</span></span><span class="legend-item"><i style="background:var(--c-awake)"></i>Wybudzenia <b>0h 04m</b> <span class="dim">(1%)</span></span></div>
+</section>
+<section class="card"><h2>HRV — ostatnie 14 nocy</h2><p class="tile-sub">Ostatnia noc: <b>104 ms</b> &middot; Zbalansowane</p><svg viewBox="0 0 640 180" class="chart" role="img" aria-label="Wykres liniowy"><line x1="42" y1="154.0" x2="626" y2="154.0" class="grid-line" /><text x="36" y="157.0" class="axis-label" text-anchor="end">61 ms</text><line x1="42" y1="85.0" x2="626" y2="85.0" class="grid-line" /><text x="36" y="88.0" class="axis-label" text-anchor="end">91 ms</text><line x1="42" y1="16.0" x2="626" y2="16.0" class="grid-line" /><text x="36" y="19.0" class="axis-label" text-anchor="end">121 ms</text><rect x="42" y="29.4" width="584.0" height="111.3" class="baseline-band" /><polyline points="42.0,64.1 86.9,54.9 131.8,75.7 176.8,110.5 221.7,110.5 266.6,85.0 311.5,115.1 356.5,85.0 401.4,94.3 446.3,64.1 491.2,54.9 536.2,71.1 581.1,59.5 626.0,54.9" fill="none" stroke="var(--c-hrv)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" /><circle cx="42.0" cy="64.1" r="3" fill="var(--c-hrv)" /><circle cx="86.9" cy="54.9" r="3" fill="var(--c-hrv)" /><circle cx="131.8" cy="75.7" r="3" fill="var(--c-hrv)" /><circle cx="176.8" cy="110.5" r="3" fill="var(--c-hrv)" /><circle cx="221.7" cy="110.5" r="3" fill="var(--c-hrv)" /><circle cx="266.6" cy="85.0" r="3" fill="var(--c-hrv)" /><circle cx="311.5" cy="115.1" r="3" fill="var(--c-hrv)" /><circle cx="356.5" cy="85.0" r="3" fill="var(--c-hrv)" /><circle cx="401.4" cy="94.3" r="3" fill="var(--c-hrv)" /><circle cx="446.3" cy="64.1" r="3" fill="var(--c-hrv)" /><circle cx="491.2" cy="54.9" r="3" fill="var(--c-hrv)" /><circle cx="536.2" cy="71.1" r="3" fill="var(--c-hrv)" /><circle cx="581.1" cy="59.5" r="3" fill="var(--c-hrv)" /><circle cx="626.0" cy="54.9" r="3" fill="var(--c-hrv)" /><text x="42.0" y="174" class="axis-label" text-anchor="middle">15.09</text><text x="131.8" y="174" class="axis-label" text-anchor="middle">17.09</text><text x="221.7" y="174" class="axis-label" text-anchor="middle">19.09</text><text x="311.5" y="174" class="axis-label" text-anchor="middle">21.09</text><text x="401.4" y="174" class="axis-label" text-anchor="middle">23.09</text><text x="491.2" y="174" class="axis-label" text-anchor="middle">25.09</text><text x="581.1" y="174" class="axis-label" text-anchor="middle">27.09</text><text x="626.0" y="174" class="axis-label" text-anchor="middle">28.09</text></svg></section>
+<section class="card"><h2>Tętno spoczynkowe — ostatnie 14 nocy</h2><p class="tile-sub">Ostatni pomiar: <b>43 bpm</b></p><svg viewBox="0 0 640 180" class="chart" role="img" aria-label="Wykres liniowy"><line x1="42" y1="154.0" x2="626" y2="154.0" class="grid-line" /><text x="36" y="157.0" class="axis-label" text-anchor="end">42 bpm</text><line x1="42" y1="85.0" x2="626" y2="85.0" class="grid-line" /><text x="36" y="88.0" class="axis-label" text-anchor="end">48 bpm</text><line x1="42" y1="16.0" x2="626" y2="16.0" class="grid-line" /><text x="36" y="19.0" class="axis-label" text-anchor="end">53 bpm</text><polyline points="42.0,91.2 86.9,103.5 131.8,103.5 176.8,29.4 221.7,41.7 266.6,91.2 311.5,66.5 356.5,78.8 401.4,115.9 446.3,115.9 491.2,128.3 536.2,103.5 581.1,115.9 626.0,140.6" fill="none" stroke="var(--c-rhr)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" /><circle cx="42.0" cy="91.2" r="3" fill="var(--c-rhr)" /><circle cx="86.9" cy="103.5" r="3" fill="var(--c-rhr)" /><circle cx="131.8" cy="103.5" r="3" fill="var(--c-rhr)" /><circle cx="176.8" cy="29.4" r="3" fill="var(--c-rhr)" /><circle cx="221.7" cy="41.7" r="3" fill="var(--c-rhr)" /><circle cx="266.6" cy="91.2" r="3" fill="var(--c-rhr)" /><circle cx="311.5" cy="66.5" r="3" fill="var(--c-rhr)" /><circle cx="356.5" cy="78.8" r="3" fill="var(--c-rhr)" /><circle cx="401.4" cy="115.9" r="3" fill="var(--c-rhr)" /><circle cx="446.3" cy="115.9" r="3" fill="var(--c-rhr)" /><circle cx="491.2" cy="128.3" r="3" fill="var(--c-rhr)" /><circle cx="536.2" cy="103.5" r="3" fill="var(--c-rhr)" /><circle cx="581.1" cy="115.9" r="3" fill="var(--c-rhr)" /><circle cx="626.0" cy="140.6" r="3" fill="var(--c-rhr)" /><text x="42.0" y="174" class="axis-label" text-anchor="middle">15.09</text><text x="131.8" y="174" class="axis-label" text-anchor="middle">17.09</text><text x="221.7" y="174" class="axis-label" text-anchor="middle">19.09</text><text x="311.5" y="174" class="axis-label" text-anchor="middle">21.09</text><text x="401.4" y="174" class="axis-label" text-anchor="middle">23.09</text><text x="491.2" y="174" class="axis-label" text-anchor="middle">25.09</text><text x="581.1" y="174" class="axis-label" text-anchor="middle">27.09</text><text x="626.0" y="174" class="axis-label" text-anchor="middle">28.09</text></svg></section>
+<section class="card"><h2>Czas snu — ostatnie 14 nocy</h2><svg viewBox="0 0 640 180" class="chart" role="img" aria-label="Wykres słupkowy"><line x1="42" y1="154.0" x2="626" y2="154.0" class="grid-line" /><text x="36" y="157.0" class="axis-label" text-anchor="end">0.0h</text><line x1="42" y1="85.0" x2="626" y2="85.0" class="grid-line" /><text x="36" y="88.0" class="axis-label" text-anchor="end">4.8h</text><line x1="42" y1="16.0" x2="626" y2="16.0" class="grid-line" /><text x="36" y="19.0" class="axis-label" text-anchor="end">9.6h</text><rect x="50.3" y="85.6" width="25.0" height="68.4" rx="2" fill="var(--c-sleep-bar)" /><text x="62.9" y="174" class="axis-label" text-anchor="middle">15.09</text><rect x="92.1" y="50.8" width="25.0" height="103.2" rx="2" fill="var(--c-sleep-bar)" /><rect x="133.8" y="70.8" width="25.0" height="83.2" rx="2" fill="var(--c-sleep-bar)" /><text x="146.3" y="174" class="axis-label" text-anchor="middle">17.09</text><rect x="175.5" y="50.4" width="25.0" height="103.6" rx="2" fill="var(--c-sleep-bar)" /><rect x="217.2" y="105.6" width="25.0" height="48.4" rx="2" fill="var(--c-sleep-bar)" /><text x="229.7" y="174" class="axis-label" text-anchor="middle">19.09</text><rect x="258.9" y="68.9" width="25.0" height="85.1" rx="2" fill="var(--c-sleep-bar)" /><rect x="300.6" y="39.3" width="25.0" height="114.7" rx="2" fill="var(--c-sleep-bar)" /><text x="313.1" y="174" class="axis-label" text-anchor="middle">21.09</text><rect x="342.3" y="77.5" width="25.0" height="76.5" rx="2" fill="var(--c-sleep-bar)" /><rect x="384.1" y="84.2" width="25.0" height="69.8" rx="2" fill="var(--c-sleep-bar)" /><text x="396.6" y="174" class="axis-label" text-anchor="middle">23.09</text><rect x="425.8" y="34.1" width="25.0" height="119.9" rx="2" fill="var(--c-sleep-bar)" /><rect x="467.5" y="88.8" width="25.0" height="65.2" rx="2" fill="var(--c-sleep-bar)" /><text x="480.0" y="174" class="axis-label" text-anchor="middle">25.09</text><rect x="509.2" y="45.4" width="25.0" height="108.6" rx="2" fill="var(--c-sleep-bar)" /><rect x="550.9" y="51.4" width="25.0" height="102.6" rx="2" fill="var(--c-sleep-bar)" /><text x="563.4" y="174" class="axis-label" text-anchor="middle">27.09</text><rect x="592.6" y="34.0" width="25.0" height="120.0" rx="2" fill="var(--c-sleep-bar)" /><text x="605.1" y="174" class="axis-label" text-anchor="middle">28.09</text></svg></section>
+<section class="card"><h2>Body Battery (28.09)</h2>
+<div class="mini-stats">
+  <div><span class="dim">Naładowano</span><b>+71</b></div>
+  <div><span class="dim">Rozładowano</span><b>-42</b></div>
+  <div><span class="dim">Max</span><b>100</b></div>
+  <div><span class="dim">Min</span><b>30</b></div>
+</div>
+<svg viewBox="0 0 640 180" class="chart" role="img" aria-label="Wykres słupkowy"><line x1="42" y1="154.0" x2="626" y2="154.0" class="grid-line" /><text x="36" y="157.0" class="axis-label" text-anchor="end">0</text><line x1="42" y1="85.0" x2="626" y2="85.0" class="grid-line" /><text x="36" y="88.0" class="axis-label" text-anchor="end">57</text><line x1="42" y1="16.0" x2="626" y2="16.0" class="grid-line" /><text x="36" y="19.0" class="axis-label" text-anchor="end">115</text><rect x="50.3" y="44.8" width="25.0" height="109.2" rx="2" fill="var(--c-battery)" /><text x="62.9" y="174" class="axis-label" text-anchor="middle">15.09</text><rect x="92.1" y="34.0" width="25.0" height="120.0" rx="2" fill="var(--c-battery)" /><rect x="133.8" y="41.2" width="25.0" height="112.8" rx="2" fill="var(--c-battery)" /><text x="146.3" y="174" class="axis-label" text-anchor="middle">17.09</text><rect x="175.5" y="66.4" width="25.0" height="87.6" rx="2" fill="var(--c-battery)" /><rect x="217.2" y="73.6" width="25.0" height="80.4" rx="2" fill="var(--c-battery)" /><text x="229.7" y="174" class="axis-label" text-anchor="middle">19.09</text><rect x="258.9" y="46.0" width="25.0" height="108.0" rx="2" fill="var(--c-battery)" /><rect x="300.6" y="58.0" width="25.0" height="96.0" rx="2" fill="var(--c-battery)" /><text x="313.1" y="174" class="axis-label" text-anchor="middle">21.09</text><rect x="342.3" y="34.0" width="25.0" height="120.0" rx="2" fill="var(--c-battery)" /><rect x="384.1" y="34.0" width="25.0" height="120.0" rx="2" fill="var(--c-battery)" /><text x="396.6" y="174" class="axis-label" text-anchor="middle">23.09</text><rect x="425.8" y="34.0" width="25.0" height="120.0" rx="2" fill="var(--c-battery)" /><rect x="467.5" y="41.2" width="25.0" height="112.8" rx="2" fill="var(--c-battery)" /><text x="480.0" y="174" class="axis-label" text-anchor="middle">25.09</text><rect x="509.2" y="34.0" width="25.0" height="120.0" rx="2" fill="var(--c-battery)" /><rect x="550.9" y="34.0" width="25.0" height="120.0" rx="2" fill="var(--c-battery)" /><text x="563.4" y="174" class="axis-label" text-anchor="middle">27.09</text><rect x="592.6" y="34.0" width="25.0" height="120.0" rx="2" fill="var(--c-battery)" /><text x="605.1" y="174" class="axis-label" text-anchor="middle">28.09</text></svg></section>
+<section class="card"><h2>Training Readiness</h2>
+<div class="gauge-row">
+  <svg viewBox="0 0 160 90.0" class="gauge" role="img" aria-label="Wskaźnik gotowości">
+<path d="M 7.0 80.0 A 73.0 73.0 0 0 1 153.0 80.0"
+  fill="none" stroke="var(--border)" stroke-width="14" stroke-linecap="round" />
+<path d="M 7.0 80.0 A 73.0 73.0 0 0 1 153.0 80.0"
+  fill="none" stroke="var(--c-readiness)" stroke-width="14" stroke-linecap="round"
+  stroke-dasharray="229.3 229.3" />
+<text x="80.0" y="74.0" text-anchor="middle" class="gauge-score">100</text>
+</svg>
+  <div class="gauge-label">
+    <div class="stat-sub">Poziom: <b>Optymalna</b></div>
+    <div class="dim">28.09</div>
+  </div>
+</div>
+</section>
+</main>
+<footer>Dane z Garmin Connect, zapisane lokalnie w data/garmin. Wygenerowano przez scripts/build_dashboard.py.</footer>
+</body>
+</html>
