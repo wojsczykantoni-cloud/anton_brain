@@ -11,13 +11,15 @@ with inline SVG charts (no external libraries or fonts, no network
 requests). Dark theme by default, switching to a light theme when the
 system prefers light (prefers-color-scheme). Days with missing data are
 rendered as gaps, never errors.
+
+Tiles: last night's sleep (duration, phase bar, score), 14-night sleep
+duration bars, and 14-night HRV line with a baseline band.
 """
 
 from __future__ import annotations
 
 import json
-import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +34,6 @@ MONTHS_PL_GEN = [
     "stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca",
     "lipca", "sierpnia", "września", "października", "listopada", "grudnia",
 ]
-WEEKDAYS_PL_SHORT = ["pon", "wt", "śr", "czw", "pt", "sob", "niedz"]
 
 SLEEP_QUALIFIER_PL = {
     "EXCELLENT": "Doskonały",
@@ -46,14 +47,6 @@ HRV_STATUS_PL = {
     "UNBALANCED": "Niezbalansowane",
     "LOW": "Niskie",
     "POOR": "Słabe",
-}
-
-READINESS_LEVEL_PL = {
-    "HIGH": "Wysoka",
-    "MODERATE": "Umiarkowana",
-    "LOW": "Niska",
-    "VERY_LOW": "Bardzo niska",
-    "PRIME": "Optymalna",
 }
 
 
@@ -90,6 +83,21 @@ def dig(obj: Any, *path: str, default: Any = None) -> Any:
     return default if cur is None else cur
 
 
+def latest_sync_dt(records: list[dict[str, Any]]) -> datetime | None:
+    best: datetime | None = None
+    for r in records:
+        fetched_at = r.get("fetched_at")
+        if not fetched_at:
+            continue
+        try:
+            dt = datetime.strptime(fetched_at, "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            continue
+        if best is None or dt > best:
+            best = dt
+    return best
+
+
 # --------------------------------------------------------------------------
 # Formatting helpers
 # --------------------------------------------------------------------------
@@ -116,13 +124,17 @@ def fmt_hms(seconds: Any) -> str:
     m = rem // 60
     return f"{h}h {m:02d}m"
 
+
 def fmt_short_date(d: date) -> str:
     return f"{d.day:02d}.{d.month:02d}"
 
 
+def fmt_dt_pl(dt: datetime) -> str:
+    return f"{dt.day} {MONTHS_PL_GEN[dt.month - 1]} {dt.year}, {dt.strftime('%H:%M')}"
+
+
 def fmt_generated_at() -> str:
-    now = datetime.now()
-    return f"{now.day} {MONTHS_PL_GEN[now.month - 1]} {now.year}, {now.strftime('%H:%M')}"
+    return fmt_dt_pl(datetime.now())
 
 
 def pl_word(value_pl_map: dict[str, str], raw: Any) -> str:
@@ -135,7 +147,7 @@ def pl_word(value_pl_map: dict[str, str], raw: Any) -> str:
 # SVG chart builders
 # --------------------------------------------------------------------------
 
-CHART_W = 640
+CHART_W = 560
 CHART_H = 180
 PAD_L = 42
 PAD_R = 14
@@ -238,9 +250,6 @@ def svg_line_chart(
             f'stroke="{color}" stroke-width="2.5" stroke-linejoin="round" '
             f'stroke-linecap="round" />'
         )
-    elif len(segment) == 1:
-        # single isolated point still gets a dot below
-        pass
 
     # dots
     for x, y in points:
@@ -326,7 +335,7 @@ def svg_phase_bar(deep: Any, light: Any, rem: Any, awake: Any) -> str:
         ("Wybudzenia", awake, "var(--c-awake)"),
     ]
     total = sum(v for _, v, _ in segments if isinstance(v, (int, float)))
-    width = 560
+    width = 640
     height = 28
 
     if not total:
@@ -357,26 +366,6 @@ def svg_phase_bar(deep: Any, light: Any, rem: Any, awake: Any) -> str:
     return "".join(parts)
 
 
-def svg_gauge(score: Any, max_score: int = 100, color: str = "var(--c-readiness)") -> str:
-    if score is None:
-        return '<p class="empty-msg">Brak danych.</p>'
-    size = 160
-    stroke = 14
-    r = (size - stroke) / 2
-    cx = cy = size / 2
-    circumference = 3.14159265 * r  # half circle
-    frac = max(0.0, min(1.0, score / max_score))
-    dash = circumference * frac
-    return f'''<svg viewBox="0 0 {size} {size / 2 + 10}" class="gauge" role="img" aria-label="Wskaźnik gotowości">
-<path d="M {stroke / 2} {cy} A {r} {r} 0 0 1 {size - stroke / 2} {cy}"
-  fill="none" stroke="var(--border)" stroke-width="{stroke}" stroke-linecap="round" />
-<path d="M {stroke / 2} {cy} A {r} {r} 0 0 1 {size - stroke / 2} {cy}"
-  fill="none" stroke="{color}" stroke-width="{stroke}" stroke-linecap="round"
-  stroke-dasharray="{dash:.1f} {circumference:.1f}" />
-<text x="{cx}" y="{cy - 6}" text-anchor="middle" class="gauge-score">{int(score)}</text>
-</svg>'''
-
-
 # --------------------------------------------------------------------------
 # Tile builders
 # --------------------------------------------------------------------------
@@ -384,7 +373,7 @@ def svg_gauge(score: Any, max_score: int = 100, color: str = "var(--c-readiness)
 def build_last_night_tile(records: list[dict[str, Any]]) -> str:
     with_sleep = [r for r in records if dig(r, "sleep", "total_seconds") is not None]
     if not with_sleep:
-        return _card("Ostatnia noc", '<p class="empty-msg">Brak danych o śnie.</p>')
+        return _card("Ostatnia noc", '<p class="empty-msg">Brak danych o śnie.</p>', extra_class="hero")
 
     r = with_sleep[-1]
     sleep = r.get("sleep") or {}
@@ -402,7 +391,7 @@ def build_last_night_tile(records: list[dict[str, Any]]) -> str:
 </div>
 {svg_phase_bar(sleep.get("deep_seconds"), sleep.get("light_seconds"), sleep.get("rem_seconds"), sleep.get("awake_seconds"))}
 '''
-    return _card(f"Ostatnia noc ({fmt_short_date(d)})", body)
+    return _card(f"Ostatnia noc ({fmt_short_date(d)})", body, extra_class="hero")
 
 
 def build_hrv_tile(records: list[dict[str, Any]]) -> str:
@@ -433,19 +422,6 @@ def build_hrv_tile(records: list[dict[str, Any]]) -> str:
     return _card("HRV — ostatnie 14 nocy", body)
 
 
-def build_rhr_tile(records: list[dict[str, Any]]) -> str:
-    trend = records[-TREND_DAYS:]
-    labels = [fmt_short_date(r["_date"]) for r in trend]
-    values = [r.get("resting_heart_rate") for r in trend]
-
-    latest = next((v for v in reversed(values) if v is not None), None)
-    sub = f"Ostatni pomiar: <b>{int(latest)} bpm</b>" if latest is not None else "Brak ostatniego pomiaru"
-
-    chart = svg_line_chart(labels, values, "var(--c-rhr)", unit=" bpm")
-    body = f'<p class="tile-sub">{sub}</p>{chart}'
-    return _card("Tętno spoczynkowe — ostatnie 14 nocy", body)
-
-
 def build_sleep_duration_tile(records: list[dict[str, Any]]) -> str:
     trend = records[-TREND_DAYS:]
     labels = [fmt_short_date(r["_date"]) for r in trend]
@@ -456,60 +432,9 @@ def build_sleep_duration_tile(records: list[dict[str, Any]]) -> str:
     return _card("Czas snu — ostatnie 14 nocy", chart)
 
 
-def build_body_battery_tile(records: list[dict[str, Any]]) -> str:
-    with_bb = [r for r in records if dig(r, "body_battery", "charged") is not None or dig(r, "body_battery", "max") is not None]
-    if not with_bb:
-        return _card("Body Battery", '<p class="empty-msg">Brak danych Body Battery.</p>')
-
-    latest = with_bb[-1]
-    bb = latest.get("body_battery") or {}
-    charged = bb.get("charged")
-    drained = bb.get("drained")
-    bmax = bb.get("max")
-    bmin = bb.get("min")
-
-    stats = f'''
-<div class="mini-stats">
-  <div><span class="dim">Naładowano</span><b>{"+" + str(int(charged)) if charged is not None else "brak danych"}</b></div>
-  <div><span class="dim">Rozładowano</span><b>{"-" + str(int(drained)) if drained is not None else "brak danych"}</b></div>
-  <div><span class="dim">Max</span><b>{int(bmax) if bmax is not None else "brak danych"}</b></div>
-  <div><span class="dim">Min</span><b>{int(bmin) if bmin is not None else "brak danych"}</b></div>
-</div>
-'''
-
-    trend = records[-TREND_DAYS:]
-    labels = [fmt_short_date(r["_date"]) for r in trend]
-    values = [dig(r, "body_battery", "max") for r in trend]
-    chart = svg_bar_chart(labels, values, "var(--c-battery)", y_fmt="{:.0f}")
-
-    return _card(f"Body Battery ({fmt_short_date(latest['_date'])})", stats + chart)
-
-
-def build_training_readiness_tile(records: list[dict[str, Any]]) -> str | None:
-    with_tr = [r for r in records if dig(r, "training_readiness", "score") is not None]
-    if not with_tr:
-        return None
-
-    latest = with_tr[-1]
-    tr = latest.get("training_readiness") or {}
-    score = tr.get("score")
-    level = pl_word(READINESS_LEVEL_PL, tr.get("level"))
-
-    gauge = svg_gauge(score)
-    body = f'''
-<div class="gauge-row">
-  {gauge}
-  <div class="gauge-label">
-    <div class="stat-sub">Poziom: <b>{esc(level)}</b></div>
-    <div class="dim">{fmt_short_date(latest["_date"])}</div>
-  </div>
-</div>
-'''
-    return _card("Training Readiness", body)
-
-
-def _card(title: str, body_html: str) -> str:
-    return f'<section class="card"><h2>{esc(title)}</h2>{body_html}</section>'
+def _card(title: str, body_html: str, extra_class: str = "") -> str:
+    cls = f"card {extra_class}".strip()
+    return f'<section class="{cls}"><h2>{esc(title)}</h2>{body_html}</section>'
 
 
 # --------------------------------------------------------------------------
@@ -531,10 +456,7 @@ CSS = """
   --c-awake: #5b6472;
 
   --c-hrv: #5b9dd9;
-  --c-rhr: #e5735a;
   --c-sleep-bar: #43c6ac;
-  --c-battery: #43c6ac;
-  --c-readiness: #7c6fe0;
 }
 
 @media (prefers-color-scheme: light) {
@@ -576,10 +498,16 @@ header .meta {
   font-size: 0.85rem;
 }
 
-main.grid {
+main.layout {
   max-width: 1200px;
   margin: 0 auto;
   padding: 16px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chart-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
   gap: 16px;
@@ -604,7 +532,7 @@ main.grid {
 .stat-row { margin-bottom: 10px; }
 
 .stat-big {
-  font-size: 2rem;
+  font-size: 2.4rem;
   font-weight: 650;
   line-height: 1.1;
 }
@@ -651,34 +579,6 @@ main.grid {
 
 .legend-item b { color: var(--text); font-weight: 600; }
 
-.mini-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.mini-stats > div {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.mini-stats span.dim { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
-.mini-stats b { font-size: 1.05rem; }
-
-.gauge-row { display: flex; align-items: center; gap: 20px; }
-
-.gauge { width: 160px; height: auto; }
-
-.gauge-score { font-size: 34px; font-weight: 700; fill: var(--text); }
-
-.gauge-label .dim { font-size: 0.8rem; }
-
 .empty-msg { color: var(--text-dim); font-size: 0.9rem; padding: 20px 0; }
 
 footer {
@@ -693,26 +593,21 @@ footer {
 
 def build_html(records: list[dict[str, Any]]) -> str:
     if not records:
-        tiles = '<section class="card"><h2>Brak danych</h2><p class="empty-msg">' \
-                'Uruchom scripts/garmin_sync.py, aby pobrać dane z Garmin Connect.</p></section>'
+        layout = '<section class="card"><h2>Brak danych</h2><p class="empty-msg">' \
+                 'Uruchom scripts/garmin_sync.py, aby pobrać dane z Garmin Connect.</p></section>'
     else:
-        tile_builders = [
-            build_last_night_tile,
-            build_hrv_tile,
-            build_rhr_tile,
-            build_sleep_duration_tile,
-            build_body_battery_tile,
-        ]
-        tiles_html = [fn(records) for fn in tile_builders]
-        tr_tile = build_training_readiness_tile(records)
-        if tr_tile:
-            tiles_html.append(tr_tile)
-        tiles = "\n".join(tiles_html)
+        hero = build_last_night_tile(records)
+        chart_row = (
+            f'<div class="chart-row">'
+            f"{build_sleep_duration_tile(records)}"
+            f"{build_hrv_tile(records)}"
+            f"</div>"
+        )
+        layout = hero + chart_row
 
     generated = esc(fmt_generated_at())
-    span = ""
-    if records:
-        span = f"Zakres danych: {fmt_short_date(records[0]['_date'])} – {fmt_short_date(records[-1]['_date'])}"
+    sync_dt = latest_sync_dt(records)
+    sync_text = esc(fmt_dt_pl(sync_dt)) if sync_dt else "brak danych"
 
     return f"""<!DOCTYPE html>
 <html lang="pl">
@@ -725,10 +620,10 @@ def build_html(records: list[dict[str, Any]]) -> str:
 <body>
 <header>
   <h1>Health Dashboard</h1>
-  <p class="meta">Wygenerowano: {generated} &middot; {esc(span)}</p>
+  <p class="meta">Ostatnia synchronizacja danych: <b>{sync_text}</b> &middot; Wygenerowano: {generated}</p>
 </header>
-<main class="grid">
-{tiles}
+<main class="layout">
+{layout}
 </main>
 <footer>Dane z Garmin Connect, zapisane lokalnie w data/garmin. Wygenerowano przez scripts/build_dashboard.py.</footer>
 </body>
