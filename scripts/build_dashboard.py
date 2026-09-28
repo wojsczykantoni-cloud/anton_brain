@@ -292,6 +292,7 @@ def svg_line_chart(
     unit: str = "",
     baseline_band: tuple[float, float] | None = None,
     y_fmt: str = "{:.0f}",
+    x_labels: str = "dense",
 ) -> str:
     non_null = [v for v in values if v is not None]
     if not non_null:
@@ -331,12 +332,12 @@ def svg_line_chart(
 
     if baseline_band:
         lo, hi = baseline_band
-        y_lo = PAD_T + (CHART_H - PAD_T - PAD_B) * (1 - (lo - y_min) / (y_max - y_min))
-        y_hi = PAD_T + (CHART_H - PAD_T - PAD_B) * (1 - (hi - y_min) / (y_max - y_min))
-        parts.append(
-            f'<rect x="{PAD_L}" y="{min(y_lo, y_hi):.1f}" width="{inner_w:.1f}" '
-            f'height="{abs(y_lo - y_hi):.1f}" class="baseline-band" />'
-        )
+        for v in (lo, hi):
+            by = PAD_T + (CHART_H - PAD_T - PAD_B) * (1 - (v - y_min) / (y_max - y_min))
+            parts.append(
+                f'<line x1="{PAD_L}" y1="{by:.1f}" x2="{CHART_W - PAD_R}" y2="{by:.1f}" '
+                f'class="baseline-line" style="stroke:{color}" />'
+            )
 
     # No stroke-linecap="round" here on purpose: a round cap draws a small
     # protruding tail past the first/last vertex in the direction of travel,
@@ -362,10 +363,14 @@ def svg_line_chart(
         if y is not None:
             parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}" />')
 
-    # Only first/middle/last day get an X-axis label, to keep it legible at
-    # tile width.
     n = len(labels)
-    label_indices = sorted({0, (n - 1) // 2, n - 1}) if n else []
+    if x_labels == "sparse":
+        # Only first/middle/last day, for charts with few, spaced-out points
+        # (e.g. weight entries) where the exact date matters more than density.
+        label_indices = sorted({0, (n - 1) // 2, n - 1}) if n else []
+    else:
+        step = max(1, round(n / 6))
+        label_indices = [i for i in range(n) if i % step == 0 or i == n - 1]
     for i in label_indices:
         x = points[i][0]
         parts.append(
@@ -443,11 +448,16 @@ def svg_bar_chart(
     return "".join(parts)
 
 
-def svg_phase_bar(deep: Any, rem: Any, light: Any, awake: Any) -> str:
+def svg_phase_bar(deep: Any, light: Any, rem: Any, awake: Any) -> str:
+    # Bar-fill widths and legend percentages are both derived from the same
+    # `segments` list and the same `total` below, so they are proportional
+    # by construction - keep it that way if this function is ever touched
+    # again (a mismatch here would mean one loop skipping a value the other
+    # includes, e.g. via a differing isinstance/None check).
     segments = [
         ("Głęboki", deep, "var(--c-deep)"),
-        ("REM", rem, "var(--c-rem)"),
         ("Lekki", light, "var(--c-light)"),
+        ("REM", rem, "var(--c-rem)"),
         ("Wybudzenia", awake, "var(--c-awake)"),
     ]
     total = sum(v for _, v, _ in segments if isinstance(v, (int, float)))
@@ -482,7 +492,7 @@ def svg_phase_bar(deep: Any, rem: Any, light: Any, awake: Any) -> str:
     return "".join(parts)
 
 
-def svg_ring(score: Any, color: str, diameter: int = 100, stroke: int = 10) -> str:
+def svg_ring(score: Any, color: str, diameter: int = 110, stroke: int = 10) -> str:
     if score is None:
         return '<p class="empty-msg">Brak danych.</p>'
     # viewBox is padded beyond the stroke's outer edge so the arc and the
@@ -514,7 +524,7 @@ def factor_bar_color(pct: float) -> str:
 def factor_bars_html(factors: dict[str, Any]) -> str:
     present = [(k, factors.get(k)) for k in FACTOR_ORDER if factors.get(k) is not None]
     if not present:
-        return '<p class="empty-msg">Brak danych o składowych gotowości.</p>'
+        return '<div class="factor-bars empty-fill"><p class="empty-msg">Brak danych o składowych.</p></div>'
 
     rows = []
     for key, value in present:
@@ -583,7 +593,10 @@ def nutrient_bar_html(label: str, value: Any, target: Any, unit: str = "g") -> s
 def build_readiness_tile(records: list[dict[str, Any]]) -> str:
     with_tr = [r for r in records if dig(r, "training_readiness", "score") is not None]
     if not with_tr:
-        return _card("Gotowość (Training Readiness)", '<p class="empty-msg">Brak danych Training Readiness.</p>')
+        return _card(
+            "Gotowość (Training Readiness)",
+            '<div class="empty-fill"><p class="empty-msg">Brak danych Training Readiness.</p></div>',
+        )
 
     latest = with_tr[-1]
     tr = latest.get("training_readiness") or {}
@@ -598,14 +611,14 @@ def build_readiness_tile(records: list[dict[str, Any]]) -> str:
     description = esc(build_readiness_description(score, level, factors))
 
     body = f'''
-<div class="ring-row">
-  {ring}
-  <div class="ring-label">
-    <div class="stat-sub">Poziom: <b>{esc(level_pl)}</b></div>
+<div class="readiness-row">
+  <div class="ring-col">
+    {ring}
+    <div class="ring-level">{esc(level_pl)}</div>
     <div class="dim">{fmt_short_date(latest["_date"])}</div>
   </div>
+  {bars}
 </div>
-{bars}
 <p class="tile-desc">{description}</p>
 '''
     return _card("Gotowość (Training Readiness)", body)
@@ -628,16 +641,21 @@ def build_hrv_tile(records: list[dict[str, Any]]) -> str:
     latest_status = next(
         (dig(r, "hrv", "status") for r in reversed(trend) if dig(r, "hrv", "status")), None
     )
-    value_text = f"{latest:.0f} ms" if latest is not None else "brak danych"
+    value_text = f'{latest:.0f}<span class="stat-unit">ms</span>' if latest is not None else "brak danych"
     status_text = pl_word(HRV_STATUS_PL, latest_status) if latest is not None else ""
+    baseline_text = f"baseline {baseline_band[0]:.0f}–{baseline_band[1]:.0f} ms" if baseline_band else ""
+    sub_parts = [t for t in (status_text, baseline_text) if t]
+    sub_text = " · ".join(sub_parts)
 
-    chart = svg_line_chart(labels, values, "var(--c-hrv)", unit=" ms", baseline_band=baseline_band)
+    chart = svg_line_chart(
+        labels, values, "var(--c-hrv)", unit=" ms", baseline_band=baseline_band, x_labels="dense"
+    )
     body = f'''
 <div class="stat-row">
   <div class="stat-big">{value_text}</div>
-  <div class="stat-sub">{esc(status_text)}</div>
+  <div class="stat-sub">{esc(sub_text)}</div>
 </div>
-{chart}
+<div class="chart-wrap">{chart}</div>
 '''
     return _card("HRV — ostatnie 14 nocy", body)
 
@@ -648,15 +666,15 @@ def build_rhr_tile(records: list[dict[str, Any]]) -> str:
     values = [r.get("resting_heart_rate") for r in trend]
 
     latest = next((v for v in reversed(values) if v is not None), None)
-    value_text = f"{int(latest)} bpm" if latest is not None else "brak danych"
+    value_text = f'{int(latest)}<span class="stat-unit">bpm</span>' if latest is not None else "brak danych"
 
-    chart = svg_line_chart(labels, values, "var(--c-rhr)", unit=" bpm")
+    chart = svg_line_chart(labels, values, "var(--c-rhr)", unit=" bpm", x_labels="dense")
     body = f'''
 <div class="stat-row">
   <div class="stat-big">{value_text}</div>
-  <div class="stat-sub">Tętno spoczynkowe, ostatni pomiar</div>
+  <div class="stat-sub">&nbsp;</div>
 </div>
-{chart}
+<div class="chart-wrap">{chart}</div>
 '''
     return _card("Tętno spoczynkowe — ostatnie 14 nocy", body)
 
@@ -664,7 +682,10 @@ def build_rhr_tile(records: list[dict[str, Any]]) -> str:
 def build_sleep_tile(records: list[dict[str, Any]]) -> str:
     with_sleep = [r for r in records if dig(r, "sleep", "total_seconds") is not None]
     if not with_sleep:
-        return _card("Sen — ostatnia noc", '<p class="empty-msg">Brak danych o śnie.</p>')
+        return _card(
+            "Sen — ostatnia noc",
+            '<div class="empty-fill"><p class="empty-msg">Brak danych o śnie.</p></div>',
+        )
 
     r = with_sleep[-1]
     sleep = r.get("sleep") or {}
@@ -680,8 +701,8 @@ def build_sleep_tile(records: list[dict[str, Any]]) -> str:
     score_text = f"{int(score)}/100 &middot; {esc(qualifier)}" if score is not None else "brak danych"
 
     phase_bar = svg_phase_bar(
-        sleep.get("deep_seconds"), sleep.get("rem_seconds"),
-        sleep.get("light_seconds"), sleep.get("awake_seconds"),
+        sleep.get("deep_seconds"), sleep.get("light_seconds"),
+        sleep.get("rem_seconds"), sleep.get("awake_seconds"),
     )
 
     body = f'''
@@ -702,7 +723,7 @@ def build_food_yesterday_tile(
     if not rec:
         return _card(
             "Wczoraj: paliwo",
-            '<p class="empty-msg empty-compact">Brak wpisu. Wyślij /dzien do bota.</p>',
+            '<div class="empty-fill"><p class="empty-msg">Wyślij /dzien do bota.</p></div>',
         )
 
     kcal = rec.get("kcal")
@@ -721,7 +742,7 @@ def build_food_yesterday_tile(
 <div class="stat-row">
   <div class="stat-big">{esc(kcal_big)}</div>
 </div>
-<div class="nutrient-bars">{bars}</div>
+<div class="nutrient-bars-wrap"><div class="nutrient-bars">{bars}</div></div>
 '''
     return _card(f"Wczoraj: paliwo ({fmt_short_date(y)})", body)
 
@@ -729,7 +750,8 @@ def build_food_yesterday_tile(
 def build_weight_tile(weight_entries: list[dict[str, Any]]) -> str:
     if not weight_entries:
         return _card(
-            "Waga", '<p class="empty-msg empty-compact">Brak wpisów. Wyślij /waga do bota.</p>'
+            "Waga",
+            '<div class="empty-fill"><p class="empty-msg">Wyślij /waga do bota.</p></div>',
         )
 
     latest = weight_entries[-1]
@@ -761,17 +783,19 @@ def build_weight_tile(weight_entries: list[dict[str, Any]]) -> str:
             labels.append("")
         values.append(e.get("kg"))
 
-    chart = svg_line_chart(labels, values, "var(--c-neutral)", unit=" kg", y_fmt="{:.1f}")
+    chart = svg_line_chart(
+        labels, values, "var(--c-neutral)", unit=" kg", y_fmt="{:.1f}", x_labels="sparse"
+    )
 
-    kg_text = f"{latest_kg:.1f} kg" if latest_kg is not None else "brak danych"
+    kg_text = f'{latest_kg:.1f}<span class="stat-unit">kg</span>' if latest_kg is not None else "brak danych"
     title_date = fmt_short_date(date.fromisoformat(latest_date_str)) if latest_date_str else ""
 
     body = f'''
-<div class="stat-row">
-  <div class="stat-big">{esc(kg_text)}</div>
-  <div class="stat-sub">{esc(change_text) if change_text else "Brak danych sprzed 7 dni"}</div>
+<div class="stat-row stat-row-inline">
+  <div class="stat-big">{kg_text}</div>
+  <div class="stat-change">{esc(change_text) if change_text else "brak danych sprzed 7 dni"}</div>
 </div>
-{chart}
+<div class="chart-wrap">{chart}</div>
 '''
     return _card(f"Waga ({title_date})" if title_date else "Waga", body)
 
@@ -791,15 +815,21 @@ def build_nutrition_trend_cards(
 
     kcal_card = _card(
         "Kalorie — ostatnie 14 dni",
-        svg_bar_chart(labels, series("kcal"), "var(--c-neutral)", unit=" kcal", target=kcal_target),
+        '<div class="chart-wrap">'
+        + svg_bar_chart(labels, series("kcal"), "var(--c-neutral)", unit=" kcal", target=kcal_target)
+        + "</div>",
     )
     protein_card = _card(
         "Białko — ostatnie 14 dni",
-        svg_bar_chart(labels, series("protein"), "var(--c-neutral)", unit=" g", target=protein_target),
+        '<div class="chart-wrap">'
+        + svg_bar_chart(labels, series("protein"), "var(--c-neutral)", unit=" g", target=protein_target)
+        + "</div>",
     )
     carbs_card = _card(
         "Węgle — ostatnie 14 dni",
-        svg_bar_chart(labels, series("carbs"), "var(--c-neutral)", unit=" g", target=carbs_target),
+        '<div class="chart-wrap">'
+        + svg_bar_chart(labels, series("carbs"), "var(--c-neutral)", unit=" g", target=carbs_target)
+        + "</div>",
     )
     return kcal_card + protein_card + carbs_card
 
@@ -878,8 +908,17 @@ main.layout {
   margin: 0 auto;
   padding: 10px 20px 14px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
+  align-items: stretch;
   gap: 12px;
+}
+
+@media (max-width: 900px) {
+  main.layout { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+  main.layout { grid-template-columns: 1fr; }
 }
 
 .card {
@@ -887,6 +926,8 @@ main.layout {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px;
+  display: flex;
+  flex-direction: column;
 }
 
 .card h2 {
@@ -898,7 +939,9 @@ main.layout {
   letter-spacing: 0.02em;
 }
 
-.stat-row { margin-bottom: 6px; }
+.stat-row { margin-bottom: 6px; flex: none; }
+
+.stat-row-inline { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 
 .stat-big {
   font-size: 30px;
@@ -906,9 +949,21 @@ main.layout {
   line-height: 1.1;
 }
 
+.stat-unit {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-left: 3px;
+}
+
+.stat-change {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
 .stat-sub, .tile-sub {
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: 13px;
   margin: 2px 0 6px;
 }
 
@@ -916,7 +971,18 @@ main.layout {
 
 .dim { color: var(--text-dim); }
 
-.chart { width: 100%; height: 110px; display: block; }
+/* Charts grow to fill whatever extra height align-items:stretch gives the
+   card (e.g. when a taller sibling in the same row, like Gotowość, forces
+   the row taller), so there's no empty strip below a fixed-height chart. */
+.chart-wrap {
+  flex: 1;
+  min-height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart { width: 100%; height: 100%; display: block; }
 
 .grid-line { stroke: var(--grid-line); stroke-width: 1; }
 
@@ -925,9 +991,9 @@ main.layout {
   font-size: 10px;
 }
 
-.baseline-band { fill: var(--c-hrv); opacity: 0.12; }
+.baseline-line { stroke-width: 1.2; stroke-dasharray: 3 3; opacity: 0.6; }
 
-.phase-bar { width: 100%; height: auto; display: block; border-radius: 4px; overflow: hidden; }
+.phase-bar { width: 100%; height: auto; display: block; border-radius: 4px; overflow: hidden; flex: none; }
 
 .legend {
   display: flex;
@@ -935,6 +1001,7 @@ main.layout {
   gap: 4px 10px;
   margin-top: 6px;
   font-size: 11px;
+  flex: none;
 }
 
 .legend-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); }
@@ -948,15 +1015,26 @@ main.layout {
 
 .legend-item b { color: var(--text); font-weight: 600; }
 
-.ring-row { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+.readiness-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 8px; flex: none; }
 
-.ring { width: 112px; height: 112px; flex: none; }
+.ring-col { display: flex; flex-direction: column; align-items: center; flex: none; gap: 2px; }
 
-.ring-score { font-size: 26px; font-weight: 700; fill: var(--text); }
+.ring { width: 122px; height: 122px; flex: none; }
 
-.ring-label .dim { font-size: 0.8rem; margin-top: 2px; }
+.ring-score { font-size: 28px; font-weight: 700; fill: var(--text); }
 
-.factor-bars { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+.ring-level {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin-top: 2px;
+}
+
+.ring-col .dim { font-size: 11px; }
+
+.factor-bars { flex: 1; display: flex; flex-direction: column; gap: 5px; justify-content: center; }
 
 .factor-row { display: grid; grid-template-columns: 104px 1fr 32px; align-items: center; gap: 8px; }
 
@@ -978,15 +1056,18 @@ main.layout {
   color: var(--text-dim);
   margin: 6px 0 0;
   line-height: 1.3;
+  flex: none;
 }
 
 .target-line { stroke: var(--text-dim); stroke-width: 1.5; stroke-dasharray: 4 3; }
 
-.nutrient-bars { display: flex; flex-direction: column; gap: 8px; }
+.nutrient-bars-wrap { flex: 1; display: flex; align-items: center; min-height: 40px; }
+
+.nutrient-bars { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 
 .nutrient-row { display: grid; grid-template-columns: 60px 1fr auto; align-items: center; gap: 10px; }
 
-.nutrient-label { font-size: 0.82rem; color: var(--text-dim); }
+.nutrient-label { font-size: 12px; color: var(--text-dim); }
 
 .nutrient-track {
   height: 7px;
@@ -997,13 +1078,23 @@ main.layout {
 
 .nutrient-fill { display: block; height: 100%; border-radius: 3px; background: var(--c-neutral); }
 
-.nutrient-value { font-size: 0.82rem; text-align: right; white-space: nowrap; }
+.nutrient-value { font-size: 12px; text-align: right; white-space: nowrap; }
 
 .nutrient-value-wide { grid-column: 2 / span 2; text-align: left; }
 
-.empty-msg { color: var(--text-dim); font-size: 0.85rem; padding: 10px 0; margin: 0; }
+/* Shared by every "no data" state: centers a short compact hint within
+   whatever height align-items:stretch gave the card, instead of a tall
+   padded block. */
+.empty-fill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  text-align: center;
+}
 
-.empty-compact { padding: 2px 0; }
+.empty-msg { color: var(--text-dim); font-size: 0.85rem; margin: 0; }
 
 footer {
   max-width: 1200px;
@@ -1030,7 +1121,8 @@ def build_html(
     else:
         layout = _card(
             "Brak danych Garmin",
-            '<p class="empty-msg">Uruchom scripts/garmin_sync.py, aby pobrać dane z Garmin Connect.</p>',
+            '<div class="empty-fill"><p class="empty-msg">Uruchom scripts/garmin_sync.py, '
+            "aby pobrać dane z Garmin Connect.</p></div>",
         )
 
     layout += build_sleep_tile(records)

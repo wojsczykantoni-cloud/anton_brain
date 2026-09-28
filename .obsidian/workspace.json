@@ -4,19 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "35b3dd55029690e8",
+        "id": "44986f3fbd926037",
         "type": "tabs",
         "children": [
           {
-            "id": "80015d6dead7334e",
+            "id": "1b527c118adacf3c",
             "type": "leaf",
             "state": {
-              "type": "html-view",
-              "state": {
-                "file": "Health/Health Dashboard.html"
-              },
-              "icon": "code-glyph",
-              "title": "Health Dashboard"
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "New tab"
             }
           }
         ]
@@ -187,8 +185,9 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "80015d6dead7334e",
+  "active": "1b527c118adacf3c",
   "lastOpenFiles": [
+    "Health/Health Dashboard.html",
     "scripts/__pycache__/build_dashboard.cpython-313.pyc",
     "daily/2026-09-23.md",
     "o-mnie.md",
@@ -196,7 +195,6 @@
     "logs/garmin-sync.log",
     "scripts/launchd/com.antonbrain.garminsync.plist",
     "scripts/garmin_daily.sh",
-    "Health/Health Dashboard.html",
     "scripts/build_dashboard.py",
     "Health",
     "data/garmin/2026-09-28.json",
