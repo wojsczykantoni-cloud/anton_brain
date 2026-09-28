@@ -11,10 +11,12 @@
             "id": "1b527c118adacf3c",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
-              "icon": "lucide-file",
-              "title": "New tab"
+              "type": "html-view",
+              "state": {
+                "file": "Health/Health Dashboard.html"
+              },
+              "icon": "code-glyph",
+              "title": "Health Dashboard"
             }
           }
         ]

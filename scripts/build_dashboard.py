@@ -257,12 +257,20 @@ def fmt_big_with_target(value: Any, target: Any, unit: str) -> str:
 # SVG chart builders
 # --------------------------------------------------------------------------
 
-CHART_W = 480
-CHART_H = 110
-PAD_L = 44
-PAD_R = 12
+CHART_W = 320
+CHART_H = 100
+PAD_L = 38
+PAD_R = 14
 PAD_T = 10
 PAD_B = 18
+
+
+def _label_indices(n: int) -> list[int]:
+    """First/middle/last index only, so an X-axis label is never cut off at
+    the tile's right edge and always sits under its own data point."""
+    if not n:
+        return []
+    return sorted({0, (n - 1) // 2, n - 1})
 
 
 def _scale_points(
@@ -292,7 +300,6 @@ def svg_line_chart(
     unit: str = "",
     baseline_band: tuple[float, float] | None = None,
     y_fmt: str = "{:.0f}",
-    x_labels: str = "dense",
 ) -> str:
     non_null = [v for v in values if v is not None]
     if not non_null:
@@ -313,9 +320,13 @@ def svg_line_chart(
     points = _scale_points(values, y_min, y_max)
     inner_w = CHART_W - PAD_L - PAD_R
 
+    # Dimensions are set as SVG attributes (width/height/viewBox), not CSS,
+    # so the chart still renders at the right size even where the host
+    # strips or ignores stylesheet rules (e.g. Obsidian's Balanced mode).
     parts: list[str] = [
-        f'<svg viewBox="0 0 {CHART_W} {CHART_H}" class="chart" role="img" '
-        f'preserveAspectRatio="none" aria-label="Wykres liniowy">'
+        f'<svg width="100%" height="{CHART_H}" viewBox="0 0 {CHART_W} {CHART_H}" '
+        f'preserveAspectRatio="xMidYMid meet" class="chart" role="img" '
+        f'aria-label="Wykres liniowy">'
     ]
 
     for frac in (0.0, 0.5, 1.0):
@@ -323,10 +334,10 @@ def svg_line_chart(
         gv = y_min + (y_max - y_min) * frac
         parts.append(
             f'<line x1="{PAD_L}" y1="{gy:.1f}" x2="{CHART_W - PAD_R}" y2="{gy:.1f}" '
-            f'class="grid-line" />'
+            f'stroke-width="1" class="grid-line" />'
         )
         parts.append(
-            f'<text x="{PAD_L - 8}" y="{gy + 3:.1f}" class="axis-label" text-anchor="end">'
+            f'<text x="{PAD_L - 8}" y="{gy + 3:.1f}" font-size="9" class="axis-label" text-anchor="end">'
             f'{y_fmt.format(gv)}{unit}</text>'
         )
 
@@ -336,6 +347,7 @@ def svg_line_chart(
             by = PAD_T + (CHART_H - PAD_T - PAD_B) * (1 - (v - y_min) / (y_max - y_min))
             parts.append(
                 f'<line x1="{PAD_L}" y1="{by:.1f}" x2="{CHART_W - PAD_R}" y2="{by:.1f}" '
+                f'stroke-width="1.2" stroke-dasharray="3 3" opacity="0.6" '
                 f'class="baseline-line" style="stroke:{color}" />'
             )
 
@@ -363,18 +375,10 @@ def svg_line_chart(
         if y is not None:
             parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}" />')
 
-    n = len(labels)
-    if x_labels == "sparse":
-        # Only first/middle/last day, for charts with few, spaced-out points
-        # (e.g. weight entries) where the exact date matters more than density.
-        label_indices = sorted({0, (n - 1) // 2, n - 1}) if n else []
-    else:
-        step = max(1, round(n / 6))
-        label_indices = [i for i in range(n) if i % step == 0 or i == n - 1]
-    for i in label_indices:
+    for i in _label_indices(len(labels)):
         x = points[i][0]
         parts.append(
-            f'<text x="{x:.1f}" y="{CHART_H - 4}" class="axis-label" text-anchor="middle">'
+            f'<text x="{x:.1f}" y="{CHART_H - 4}" font-size="9" class="axis-label" text-anchor="middle">'
             f"{esc(labels[i])}</text>"
         )
 
@@ -405,8 +409,9 @@ def svg_bar_chart(
     bar_w = slot_w * 0.6
 
     parts = [
-        f'<svg viewBox="0 0 {CHART_W} {CHART_H}" class="chart" role="img" '
-        f'preserveAspectRatio="none" aria-label="Wykres słupkowy">'
+        f'<svg width="100%" height="{CHART_H}" viewBox="0 0 {CHART_W} {CHART_H}" '
+        f'preserveAspectRatio="xMidYMid meet" class="chart" role="img" '
+        f'aria-label="Wykres słupkowy">'
     ]
 
     for frac in (0.0, 0.5, 1.0):
@@ -414,14 +419,14 @@ def svg_bar_chart(
         gv = y_max * frac
         parts.append(
             f'<line x1="{PAD_L}" y1="{gy:.1f}" x2="{CHART_W - PAD_R}" y2="{gy:.1f}" '
-            f'class="grid-line" />'
+            f'stroke-width="1" class="grid-line" />'
         )
         parts.append(
-            f'<text x="{PAD_L - 8}" y="{gy + 3:.1f}" class="axis-label" text-anchor="end">'
+            f'<text x="{PAD_L - 8}" y="{gy + 3:.1f}" font-size="9" class="axis-label" text-anchor="end">'
             f'{y_fmt.format(gv)}{unit}</text>'
         )
 
-    step = max(1, round(n / 6))
+    label_idx_set = set(_label_indices(n))
     for i, v in enumerate(values):
         x = PAD_L + slot_w * i + (slot_w - bar_w) / 2
         if v is not None:
@@ -431,9 +436,9 @@ def svg_bar_chart(
                 f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" '
                 f'rx="2" fill="{color}" />'
             )
-        if i % step == 0 or i == n - 1:
+        if i in label_idx_set:
             parts.append(
-                f'<text x="{x + bar_w / 2:.1f}" y="{CHART_H - 4}" class="axis-label" '
+                f'<text x="{x + bar_w / 2:.1f}" y="{CHART_H - 4}" font-size="9" class="axis-label" '
                 f'text-anchor="middle">{esc(labels[i])}</text>'
             )
 
@@ -441,7 +446,7 @@ def svg_bar_chart(
         ty = PAD_T + inner_h - (target / y_max) * inner_h
         parts.append(
             f'<line x1="{PAD_L}" y1="{ty:.1f}" x2="{CHART_W - PAD_R}" y2="{ty:.1f}" '
-            f'class="target-line" />'
+            f'stroke-width="1.5" stroke-dasharray="4 3" class="target-line" />'
         )
 
     parts.append("</svg>")
