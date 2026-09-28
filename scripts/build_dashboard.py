@@ -862,21 +862,21 @@ header {
 }
 
 header h1 {
-  margin: 0 0 4px;
-  font-size: 1.6rem;
+  margin: 0 0 2px;
+  font-size: 1.35rem;
   font-weight: 650;
 }
 
 header .meta {
   margin: 0;
   color: var(--text-dim);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 main.layout {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 12px 20px 20px;
+  padding: 10px 20px 14px;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
@@ -898,7 +898,7 @@ main.layout {
   letter-spacing: 0.02em;
 }
 
-.stat-row { margin-bottom: 8px; }
+.stat-row { margin-bottom: 6px; }
 
 .stat-big {
   font-size: 30px;
@@ -908,8 +908,8 @@ main.layout {
 
 .stat-sub, .tile-sub {
   color: var(--text-dim);
-  font-size: 0.9rem;
-  margin: 2px 0 10px;
+  font-size: 12px;
+  margin: 2px 0 6px;
 }
 
 .stat-sub b, .tile-sub b { color: var(--text); font-weight: 600; }
@@ -948,7 +948,7 @@ main.layout {
 
 .legend-item b { color: var(--text); font-weight: 600; }
 
-.ring-row { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
+.ring-row { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
 
 .ring { width: 112px; height: 112px; flex: none; }
 
@@ -956,11 +956,11 @@ main.layout {
 
 .ring-label .dim { font-size: 0.8rem; margin-top: 2px; }
 
-.factor-bars { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
+.factor-bars { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
 
-.factor-row { display: grid; grid-template-columns: 96px 1fr 34px; align-items: center; gap: 8px; }
+.factor-row { display: grid; grid-template-columns: 104px 1fr 32px; align-items: center; gap: 8px; }
 
-.factor-label { font-size: 0.78rem; color: var(--text-dim); }
+.factor-label { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 
 .factor-track {
   height: 6px;
@@ -971,13 +971,13 @@ main.layout {
 
 .factor-fill { display: block; height: 100%; border-radius: 3px; }
 
-.factor-value { font-size: 0.78rem; text-align: right; color: var(--text-dim); }
+.factor-value { font-size: 11px; text-align: right; color: var(--text-dim); }
 
 .tile-desc {
-  font-size: 0.85rem;
+  font-size: 12px;
   color: var(--text-dim);
-  margin: 8px 0 0;
-  line-height: 1.4;
+  margin: 6px 0 0;
+  line-height: 1.3;
 }
 
 .target-line { stroke: var(--text-dim); stroke-width: 1.5; stroke-dasharray: 4 3; }
