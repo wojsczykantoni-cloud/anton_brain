@@ -10,10 +10,12 @@ scripts/garmin_login.py. Never prompts for a password. If the saved
 tokens are missing or expired, prints a message telling the user to run
 scripts/garmin_login.py and exits with a non-zero status.
 
-Fetches the last 30 days of: sleep (duration, phases, score), HRV
-(overnight average, status, baseline), resting heart rate, Body Battery,
-stress, steps, and Training Readiness (when the API returns it). Writes
-one JSON file per day to data/garmin/YYYY-MM-DD.json (gitignored).
+Fetches the last 30 days of: sleep (duration, phases, score, start/end
+times), HRV (overnight average, status, baseline), resting heart rate,
+Body Battery, stress, steps, and Training Readiness with its per-factor
+breakdown (sleep, HRV, sleep history, stress history, recovery time,
+ACWR/load), when the API returns it. Writes one JSON file per day to
+data/garmin/YYYY-MM-DD.json (gitignored).
 
 Runs incrementally: days that already have a saved file are skipped,
 except for the two most recent days, which are always re-fetched since
@@ -30,8 +32,6 @@ import time
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Callable
-
-from garth.exc import GarthHTTPError
 
 from garminconnect import (
     Garmin,
@@ -53,7 +53,7 @@ def login() -> Garmin:
         garmin = Garmin()
         garmin.login(str(TOKENSTORE))
         return garmin
-    except (FileNotFoundError, GarthHTTPError, GarminConnectAuthenticationError):
+    except GarminConnectAuthenticationError:
         print(
             "Brak ważnych tokenów Garmin Connect. Uruchom scripts/garmin_login.py, "
             "aby zalogować się ponownie.",
@@ -109,6 +109,11 @@ def extract_sleep(sleep_data: Any) -> dict[str, Any]:
         else None,
         "avg_respiration": daily.get("averageRespirationValue"),
         "avg_stress": daily.get("avgSleepStress"),
+        # Garmin's "Local" sleep timestamps are epoch-ms already shifted by the
+        # local UTC offset, so reading them back as UTC yields correct wall-clock
+        # local time (no separate timezone conversion needed downstream).
+        "start_local_ms": daily.get("sleepStartTimestampLocal"),
+        "end_local_ms": daily.get("sleepEndTimestampLocal"),
     }
 
 
@@ -181,6 +186,18 @@ def extract_training_readiness(tr_data: Any) -> dict[str, Any]:
     return {
         "score": entry.get("score"),
         "level": entry.get("level"),
+        "recovery_time_hours": entry.get("recoveryTime"),
+        "acute_load": entry.get("acuteLoad"),
+        # Per-component contribution (0-100) behind the overall score. Only
+        # the components Garmin actually returns for a given day are non-null.
+        "factors": {
+            "sleep": entry.get("sleepScoreFactorPercent"),
+            "hrv": entry.get("hrvFactorPercent"),
+            "sleep_history": entry.get("sleepHistoryFactorPercent"),
+            "stress_history": entry.get("stressHistoryFactorPercent"),
+            "recovery_time": entry.get("recoveryTimeFactorPercent"),
+            "acwr": entry.get("acwrFactorPercent"),
+        },
     }
 
 
