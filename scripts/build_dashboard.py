@@ -5,29 +5,36 @@ Usage (from repo root, using the project venv):
 
     .venv/bin/python scripts/build_dashboard.py
 
-Reads every daily JSON file written by scripts/garmin_sync.py, and
-generates a single standalone HTML file at "Health/Health Dashboard.html"
-with inline SVG charts (no external libraries or fonts, no network
-requests). Dark theme by default, switching to a light theme when the
-system prefers light (prefers-color-scheme). Days with missing data are
-rendered as gaps, never errors.
+Reads every daily JSON file written by scripts/garmin_sync.py, plus
+data/food/*.json, data/weight.json and data/targets.json written by the
+Telegram bot's /dzien, /waga and /cel commands. Generates a single
+standalone HTML file at "Health/Health Dashboard.html" with inline SVG
+charts (no external libraries or fonts, no network requests). Dark theme
+by default, switching to a light theme when the system prefers light
+(prefers-color-scheme). Days with missing data are rendered as gaps,
+never errors; a missing data/targets.json simply omits target lines.
 
 3-column grid. Row 1: Training Readiness ring + per-factor bars (only the
 factors actually present in the data) with a rule-based Polish summary,
 HRV trend, resting heart rate trend. Row 2: last night's sleep (duration,
-start/end times, score, phase bar); the other two cells are left empty
-for future tiles.
+start/end times, score, phase bar), yesterday's nutrition vs. target,
+weight trend. Row 3: 14-day calorie/protein/carb bar charts with a
+dashed target line. Colors are neutral throughout the nutrition/weight
+tiles - no good/bad judgment, just numbers.
 """
 
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data" / "garmin"
+FOOD_DIR = REPO_ROOT / "data" / "food"
+WEIGHT_PATH = REPO_ROOT / "data" / "weight.json"
+TARGETS_PATH = REPO_ROOT / "data" / "targets.json"
 OUT_DIR = REPO_ROOT / "Health"
 OUT_PATH = OUT_DIR / "Health Dashboard.html"
 
@@ -136,6 +143,53 @@ def latest_sync_dt(records: list[dict[str, Any]]) -> datetime | None:
     return best
 
 
+def load_food_records() -> dict[str, dict[str, Any]]:
+    """Returns {date_str: {kcal, protein, carbs, fat, ...}} from data/food/*.json."""
+    if not FOOD_DIR.exists():
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for path in FOOD_DIR.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        date_str = data.get("date") or path.stem
+        if not isinstance(date_str, str):
+            continue
+        result[date_str] = data
+    return result
+
+
+def load_weight_entries() -> list[dict[str, Any]]:
+    """Returns [{date, kg}, ...] sorted by date, from data/weight.json."""
+    if not WEIGHT_PATH.exists():
+        return []
+    try:
+        data = json.loads(WEIGHT_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(data, list):
+        return []
+    entries = [e for e in data if isinstance(e, dict) and e.get("date")]
+    entries.sort(key=lambda e: e["date"])
+    return entries
+
+
+def load_targets() -> dict[str, Any] | None:
+    if not TARGETS_PATH.exists():
+        return None
+    try:
+        data = json.loads(TARGETS_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def last_n_calendar_days(n: int) -> list[date]:
+    today = date.today()
+    return [today - timedelta(days=i) for i in range(n - 1, -1, -1)]
+
+
 # --------------------------------------------------------------------------
 # Formatting helpers
 # --------------------------------------------------------------------------
@@ -188,6 +242,15 @@ def pl_word(value_pl_map: dict[str, str], raw: Any) -> str:
     if not raw:
         return "brak danych"
     return value_pl_map.get(raw, str(raw).replace("_", " ").title())
+
+
+def fmt_big_with_target(value: Any, target: Any, unit: str) -> str:
+    if value is None:
+        return "brak danych"
+    text = f"{value:.0f}"
+    if target:
+        text += f" / {target:.0f}"
+    return f"{text} {unit}"
 
 
 # --------------------------------------------------------------------------
@@ -313,6 +376,72 @@ def svg_line_chart(
     return "".join(parts)
 
 
+def svg_bar_chart(
+    labels: list[str],
+    values: list[float | None],
+    color: str,
+    unit: str = "",
+    y_fmt: str = "{:.0f}",
+    target: float | None = None,
+) -> str:
+    non_null = [v for v in values if v is not None]
+    if not non_null:
+        return '<p class="empty-msg">Brak danych do wykresu.</p>'
+
+    all_vals = list(non_null)
+    if target is not None:
+        all_vals.append(target)
+    y_max = max(all_vals) * 1.15 or 1.0
+    n = len(values)
+    inner_w = CHART_W - PAD_L - PAD_R
+    inner_h = CHART_H - PAD_T - PAD_B
+    slot_w = inner_w / n
+    bar_w = slot_w * 0.6
+
+    parts = [
+        f'<svg viewBox="0 0 {CHART_W} {CHART_H}" class="chart" role="img" '
+        f'aria-label="Wykres słupkowy">'
+    ]
+
+    for frac in (0.0, 0.5, 1.0):
+        gy = PAD_T + inner_h * (1 - frac)
+        gv = y_max * frac
+        parts.append(
+            f'<line x1="{PAD_L}" y1="{gy:.1f}" x2="{CHART_W - PAD_R}" y2="{gy:.1f}" '
+            f'class="grid-line" />'
+        )
+        parts.append(
+            f'<text x="{PAD_L - 6}" y="{gy + 3:.1f}" class="axis-label" text-anchor="end">'
+            f'{y_fmt.format(gv)}{unit}</text>'
+        )
+
+    step = max(1, round(n / 6))
+    for i, v in enumerate(values):
+        x = PAD_L + slot_w * i + (slot_w - bar_w) / 2
+        if v is not None:
+            bar_h = (v / y_max) * inner_h if y_max else 0
+            y = PAD_T + inner_h - bar_h
+            parts.append(
+                f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" '
+                f'rx="2" fill="{color}" />'
+            )
+        if i % step == 0 or i == n - 1:
+            parts.append(
+                f'<text x="{x + bar_w / 2:.1f}" y="{CHART_H - 6}" class="axis-label" '
+                f'text-anchor="middle">{esc(labels[i])}</text>'
+            )
+
+    if target is not None and y_max:
+        ty = PAD_T + inner_h - (target / y_max) * inner_h
+        parts.append(
+            f'<line x1="{PAD_L}" y1="{ty:.1f}" x2="{CHART_W - PAD_R}" y2="{ty:.1f}" '
+            f'class="target-line" />'
+        )
+
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 def svg_phase_bar(deep: Any, rem: Any, light: Any, awake: Any) -> str:
     segments = [
         ("Głęboki", deep, "var(--c-deep)"),
@@ -420,6 +549,26 @@ def build_readiness_description(score: Any, level: Any, factors: dict[str, Any])
         sentence2 = "Wszystkie mierzone składowe są w dobrym zakresie."
 
     return f"{sentence1} {sentence2}"
+
+
+def nutrient_bar_html(label: str, value: Any, target: Any, unit: str = "g") -> str:
+    value_text = f"{value:.0f}{unit}" if value is not None else "brak danych"
+    if target:
+        frac = max(0.0, min(100.0, (value / target) * 100)) if value is not None else 0.0
+        return (
+            f'<div class="nutrient-row">'
+            f'<span class="nutrient-label">{esc(label)}</span>'
+            f'<span class="nutrient-track"><span class="nutrient-fill" '
+            f'style="width:{frac:.0f}%"></span></span>'
+            f'<span class="nutrient-value">{value_text} <span class="dim">/ {target:.0f}{unit}</span></span>'
+            f"</div>"
+        )
+    return (
+        f'<div class="nutrient-row">'
+        f'<span class="nutrient-label">{esc(label)}</span>'
+        f'<span class="nutrient-value nutrient-value-wide">{value_text}</span>'
+        f"</div>"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -540,6 +689,111 @@ def build_sleep_tile(records: list[dict[str, Any]]) -> str:
     return _card(f"Sen — ostatnia noc ({fmt_short_date(d)})", body)
 
 
+def build_food_yesterday_tile(
+    food_by_date: dict[str, dict[str, Any]], targets: dict[str, Any] | None
+) -> str:
+    y = date.today() - timedelta(days=1)
+    rec = food_by_date.get(y.isoformat())
+    if not rec:
+        return _card("Wczoraj: paliwo", '<p class="empty-msg">Brak wpisu za wczoraj.</p>')
+
+    kcal = rec.get("kcal")
+    protein = rec.get("protein")
+    carbs = rec.get("carbs")
+    kcal_target = (targets or {}).get("kcal")
+    protein_target = (targets or {}).get("protein")
+    carbs_target = (targets or {}).get("carbs")
+
+    kcal_big = fmt_big_with_target(kcal, kcal_target, "kcal")
+    bars = nutrient_bar_html("Białko", protein, protein_target) + nutrient_bar_html(
+        "Węgle", carbs, carbs_target
+    )
+
+    body = f'''
+<div class="stat-row">
+  <div class="stat-big">{esc(kcal_big)}</div>
+</div>
+<div class="nutrient-bars">{bars}</div>
+'''
+    return _card(f"Wczoraj: paliwo ({fmt_short_date(y)})", body)
+
+
+def build_weight_tile(weight_entries: list[dict[str, Any]]) -> str:
+    if not weight_entries:
+        return _card("Waga", '<p class="empty-msg">Brak wpisów wagi.</p>')
+
+    latest = weight_entries[-1]
+    latest_kg = latest.get("kg")
+    latest_date_str = latest.get("date")
+
+    change_text = ""
+    try:
+        latest_d = date.fromisoformat(latest_date_str)
+        cutoff = latest_d - timedelta(days=7)
+        prior = [
+            e for e in weight_entries
+            if e.get("date") and date.fromisoformat(e["date"]) <= cutoff
+        ]
+        if prior and latest_kg is not None and prior[-1].get("kg") is not None:
+            diff = latest_kg - prior[-1]["kg"]
+            sign = "+" if diff > 0 else ""
+            change_text = f"{sign}{diff:.1f} kg / 7 dni"
+    except (ValueError, TypeError):
+        change_text = ""
+
+    trend = weight_entries[-30:]
+    labels = []
+    values = []
+    for e in trend:
+        try:
+            labels.append(fmt_short_date(date.fromisoformat(e["date"])))
+        except (ValueError, TypeError, KeyError):
+            labels.append("")
+        values.append(e.get("kg"))
+
+    chart = svg_line_chart(labels, values, "var(--c-neutral)", unit=" kg", y_fmt="{:.1f}")
+
+    kg_text = f"{latest_kg:.1f} kg" if latest_kg is not None else "brak danych"
+    title_date = fmt_short_date(date.fromisoformat(latest_date_str)) if latest_date_str else ""
+
+    body = f'''
+<div class="stat-row">
+  <div class="stat-big">{esc(kg_text)}</div>
+  <div class="stat-sub">{esc(change_text) if change_text else "Brak danych sprzed 7 dni"}</div>
+</div>
+{chart}
+'''
+    return _card(f"Waga ({title_date})" if title_date else "Waga", body)
+
+
+def build_nutrition_trend_cards(
+    food_by_date: dict[str, dict[str, Any]], targets: dict[str, Any] | None
+) -> str:
+    days14 = last_n_calendar_days(TREND_DAYS)
+    labels = [fmt_short_date(d) for d in days14]
+
+    def series(key: str) -> list[float | None]:
+        return [(food_by_date.get(d.isoformat()) or {}).get(key) for d in days14]
+
+    kcal_target = (targets or {}).get("kcal")
+    protein_target = (targets or {}).get("protein")
+    carbs_target = (targets or {}).get("carbs")
+
+    kcal_card = _card(
+        "Kalorie — ostatnie 14 dni",
+        svg_bar_chart(labels, series("kcal"), "var(--c-neutral)", unit=" kcal", target=kcal_target),
+    )
+    protein_card = _card(
+        "Białko — ostatnie 14 dni",
+        svg_bar_chart(labels, series("protein"), "var(--c-neutral)", unit=" g", target=protein_target),
+    )
+    carbs_card = _card(
+        "Węgle — ostatnie 14 dni",
+        svg_bar_chart(labels, series("carbs"), "var(--c-neutral)", unit=" g", target=carbs_target),
+    )
+    return kcal_card + protein_card + carbs_card
+
+
 def _card(title: str, body_html: str, extra_class: str = "") -> str:
     cls = f"card {extra_class}".strip()
     return f'<section class="{cls}"><h2>{esc(title)}</h2>{body_html}</section>'
@@ -566,6 +820,7 @@ CSS = """
 
   --c-hrv: #5b9dd9;
   --c-rhr: #e5735a;
+  --c-neutral: #7c8ba1;
 }
 
 @media (prefers-color-scheme: light) {
@@ -719,6 +974,27 @@ main.layout {
   line-height: 1.4;
 }
 
+.target-line { stroke: var(--text-dim); stroke-width: 1.5; stroke-dasharray: 4 3; }
+
+.nutrient-bars { display: flex; flex-direction: column; gap: 8px; }
+
+.nutrient-row { display: grid; grid-template-columns: 60px 1fr auto; align-items: center; gap: 10px; }
+
+.nutrient-label { font-size: 0.82rem; color: var(--text-dim); }
+
+.nutrient-track {
+  height: 7px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.nutrient-fill { display: block; height: 100%; border-radius: 3px; background: var(--c-neutral); }
+
+.nutrient-value { font-size: 0.82rem; text-align: right; white-space: nowrap; }
+
+.nutrient-value-wide { grid-column: 2 / span 2; text-align: left; }
+
 .empty-msg { color: var(--text-dim); font-size: 0.9rem; padding: 20px 0; }
 
 footer {
@@ -731,17 +1007,28 @@ footer {
 """
 
 
-def build_html(records: list[dict[str, Any]]) -> str:
-    if not records:
-        layout = '<section class="card"><h2>Brak danych</h2><p class="empty-msg">' \
-                 'Uruchom scripts/garmin_sync.py, aby pobrać dane z Garmin Connect.</p></section>'
-    else:
+def build_html(
+    records: list[dict[str, Any]],
+    food_by_date: dict[str, dict[str, Any]],
+    weight_entries: list[dict[str, Any]],
+    targets: dict[str, Any] | None,
+) -> str:
+    if records:
         layout = (
             build_readiness_tile(records)
             + build_hrv_tile(records)
             + build_rhr_tile(records)
-            + build_sleep_tile(records)
         )
+    else:
+        layout = _card(
+            "Brak danych Garmin",
+            '<p class="empty-msg">Uruchom scripts/garmin_sync.py, aby pobrać dane z Garmin Connect.</p>',
+        )
+
+    layout += build_sleep_tile(records)
+    layout += build_food_yesterday_tile(food_by_date, targets)
+    layout += build_weight_tile(weight_entries)
+    layout += build_nutrition_trend_cards(food_by_date, targets)
 
     generated = esc(fmt_generated_at())
     sync_dt = latest_sync_dt(records)
@@ -771,7 +1058,10 @@ def build_html(records: list[dict[str, Any]]) -> str:
 
 def main() -> None:
     records = load_records()
-    html = build_html(records)
+    food_by_date = load_food_records()
+    weight_entries = load_weight_entries()
+    targets = load_targets()
+    html = build_html(records, food_by_date, weight_entries, targets)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(html, encoding="utf-8")
     print(f"Zapisano dashboard: {OUT_PATH} ({len(records)} dni danych, {len(html)} znaków).")

@@ -21,6 +21,7 @@
 
   --c-hrv: #5b9dd9;
   --c-rhr: #e5735a;
+  --c-neutral: #7c8ba1;
 }
 
 @media (prefers-color-scheme: light) {
@@ -174,6 +175,27 @@ main.layout {
   line-height: 1.4;
 }
 
+.target-line { stroke: var(--text-dim); stroke-width: 1.5; stroke-dasharray: 4 3; }
+
+.nutrient-bars { display: flex; flex-direction: column; gap: 8px; }
+
+.nutrient-row { display: grid; grid-template-columns: 60px 1fr auto; align-items: center; gap: 10px; }
+
+.nutrient-label { font-size: 0.82rem; color: var(--text-dim); }
+
+.nutrient-track {
+  height: 7px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.nutrient-fill { display: block; height: 100%; border-radius: 3px; background: var(--c-neutral); }
+
+.nutrient-value { font-size: 0.82rem; text-align: right; white-space: nowrap; }
+
+.nutrient-value-wide { grid-column: 2 / span 2; text-align: left; }
+
 .empty-msg { color: var(--text-dim); font-size: 0.9rem; padding: 20px 0; }
 
 footer {
@@ -188,7 +210,7 @@ footer {
 <body>
 <header>
   <h1>Health Dashboard</h1>
-  <p class="meta">Ostatnia synchronizacja danych: <b>28 września 2026, 18:07</b> &middot; Wygenerowano: 28 września 2026, 18:10</p>
+  <p class="meta">Ostatnia synchronizacja danych: <b>28 września 2026, 18:07</b> &middot; Wygenerowano: 28 września 2026, 18:17</p>
 </header>
 <main class="layout">
 <section class="card"><h2>Gotowość (Training Readiness)</h2>
@@ -225,7 +247,7 @@ footer {
   <div class="stat-sub">Zasypianie &ndash; pobudka: <b>01:50 &ndash; 10:15</b> &middot; Ocena snu: <b>93/100 &middot; Doskonały</b></div>
 </div>
 <svg viewBox="0 0 640 28" class="phase-bar" role="img" aria-label="Fazy snu"><rect x="0.0" y="0" width="92.5" height="28" fill="var(--c-deep)" /><rect x="92.5" y="0" width="133.1" height="28" fill="var(--c-rem)" /><rect x="225.6" y="0" width="409.3" height="28" fill="var(--c-light)" /><rect x="634.9" y="0" width="5.1" height="28" fill="var(--c-awake)" /></svg><div class="legend"><span class="legend-item"><i style="background:var(--c-deep)"></i>Głęboki <b>1h 13m</b> <span class="dim">(14%)</span></span><span class="legend-item"><i style="background:var(--c-rem)"></i>REM <b>1h 45m</b> <span class="dim">(21%)</span></span><span class="legend-item"><i style="background:var(--c-light)"></i>Lekki <b>5h 23m</b> <span class="dim">(64%)</span></span><span class="legend-item"><i style="background:var(--c-awake)"></i>Wybudzenia <b>0h 04m</b> <span class="dim">(1%)</span></span></div>
-</section>
+</section><section class="card"><h2>Wczoraj: paliwo</h2><p class="empty-msg">Brak wpisu za wczoraj.</p></section><section class="card"><h2>Waga</h2><p class="empty-msg">Brak wpisów wagi.</p></section><section class="card"><h2>Kalorie — ostatnie 14 dni</h2><p class="empty-msg">Brak danych do wykresu.</p></section><section class="card"><h2>Białko — ostatnie 14 dni</h2><p class="empty-msg">Brak danych do wykresu.</p></section><section class="card"><h2>Węgle — ostatnie 14 dni</h2><p class="empty-msg">Brak danych do wykresu.</p></section>
 </main>
 <footer>Dane z Garmin Connect, zapisane lokalnie w data/garmin. Wygenerowano przez scripts/build_dashboard.py.</footer>
 </body>

@@ -16,6 +16,17 @@ if (!TOKEN || !CHAT_ID) {
 const DAILY_DIR = path.join(__dirname, 'daily');
 const TEMPLATE_PATH = path.join(__dirname, 'templates', 'daily.md');
 
+const FOOD_DIR = path.join(__dirname, 'data', 'food');
+const WEIGHT_PATH = path.join(__dirname, 'data', 'weight.json');
+const TARGETS_PATH = path.join(__dirname, 'data', 'targets.json');
+const PYTHON_BIN = path.join(__dirname, '.venv', 'bin', 'python');
+const BUILD_DASHBOARD_SCRIPT = path.join(__dirname, 'scripts', 'build_dashboard.py');
+
+const KCAL_MIN = 300;
+const KCAL_MAX = 8000;
+const WEIGHT_MIN = 30;
+const WEIGHT_MAX = 250;
+
 const SECTIONS = {
   note: {
     heading: '## 💡 Pomysły / obserwacje',
@@ -266,12 +277,15 @@ function icalDeleteById(id) {
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-function todayISO() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
+function isoDateFor(d) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function todayISO() {
+  return isoDateFor(new Date());
 }
 
 function dailyPathFor(dateStr) {
@@ -330,6 +344,98 @@ function readDailyNote(dateStr) {
     return null;
   }
   return fs.readFileSync(filePath, 'utf8');
+}
+
+// Parsuje 4 tokeny w stałej kolejności: "<kcal> b<białko> w<węgle> t<tłuszcze>"
+// (np. ["2450", "b160", "w300", "t70"]). Akceptuje przecinek jako separator
+// dziesiętny. Zwraca null przy złym formacie albo nierozsądnych wartościach -
+// wywołujący odpowiada za pokazanie podpowiedzi formatu.
+function parseMacros(tokens) {
+  if (tokens.length !== 4) return null;
+
+  const numRe = /^\d+(?:[.,]\d+)?$/;
+  if (!numRe.test(tokens[0])) return null;
+  const kcal = parseFloat(tokens[0].replace(',', '.'));
+
+  const macroDefs = [['b', 'protein'], ['w', 'carbs'], ['t', 'fat']];
+  const result = { kcal };
+  for (let i = 0; i < macroDefs.length; i++) {
+    const [prefix, key] = macroDefs[i];
+    const m = tokens[i + 1].match(new RegExp(`^${prefix}(\\d+(?:[.,]\\d+)?)$`, 'i'));
+    if (!m) return null;
+    result[key] = parseFloat(m[1].replace(',', '.'));
+  }
+
+  if (!(result.kcal > 0) || !(result.protein > 0) || !(result.carbs > 0) || !(result.fat > 0)) {
+    return null;
+  }
+  if (result.kcal < KCAL_MIN || result.kcal > KCAL_MAX) {
+    return null;
+  }
+
+  return result;
+}
+
+function saveFoodDay(dateStr, macros) {
+  fs.mkdirSync(FOOD_DIR, { recursive: true });
+  const filePath = path.join(FOOD_DIR, `${dateStr}.json`);
+  const record = { date: dateStr, ...macros, logged_at: new Date().toISOString() };
+  fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf8');
+}
+
+function loadWeightEntries() {
+  if (!fs.existsSync(WEIGHT_PATH)) return [];
+  try {
+    const data = JSON.parse(fs.readFileSync(WEIGHT_PATH, 'utf8'));
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+// Jeden wpis na dzień - nadpisuje istniejący wpis dla tej daty zamiast dopisywać kolejny.
+function saveWeightEntry(dateStr, kg) {
+  const entries = loadWeightEntries();
+  const idx = entries.findIndex((e) => e.date === dateStr);
+  const entry = { date: dateStr, kg };
+  if (idx === -1) {
+    entries.push(entry);
+  } else {
+    entries[idx] = entry;
+  }
+  entries.sort((a, b) => a.date.localeCompare(b.date));
+  fs.mkdirSync(path.dirname(WEIGHT_PATH), { recursive: true });
+  fs.writeFileSync(WEIGHT_PATH, JSON.stringify(entries, null, 2), 'utf8');
+}
+
+function saveTargets(macros) {
+  fs.mkdirSync(path.dirname(TARGETS_PATH), { recursive: true });
+  const record = { ...macros, updated_at: new Date().toISOString() };
+  fs.writeFileSync(TARGETS_PATH, JSON.stringify(record, null, 2), 'utf8');
+}
+
+function execFileP(cmd, args, options) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, options || {}, (error, stdout) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+// Odświeża dashboard po każdym zapisie /dzien, /waga, /cel. Błąd tu nie
+// powinien cofać już zapisanych danych ani zawierać ich treści w logu.
+async function rebuildDashboardSafe() {
+  try {
+    await execFileP(PYTHON_BIN, [BUILD_DASHBOARD_SCRIPT], { cwd: __dirname });
+    return true;
+  } catch (err) {
+    console.error('Błąd przebudowy dashboardu:', err.message);
+    return false;
+  }
 }
 
 function isAuthorized(msg) {
@@ -457,6 +563,113 @@ bot.onText(/^\/usun(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   } catch (err) {
     console.error('Błąd przy usuwaniu wydarzenia:', err);
     await bot.sendMessage(msg.chat.id, `❌ Nie udało się usunąć wydarzenia: ${err.message}`);
+  }
+});
+
+const DZIEN_USAGE =
+  'Format: /dzien [wczoraj] <kcal> b<białko> w<węgle> t<tłuszcze>, np. /dzien 2450 b160 w300 t70.';
+
+bot.onText(/^\/dzien(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
+  if (!isAuthorized(msg)) return;
+
+  const raw = match[1] && match[1].trim();
+  if (!raw) {
+    await bot.sendMessage(msg.chat.id, DZIEN_USAGE);
+    return;
+  }
+
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  let isYesterday = false;
+  if (tokens.length && /^wczoraj$/i.test(tokens[0])) {
+    isYesterday = true;
+    tokens.shift();
+  }
+
+  const macros = parseMacros(tokens);
+  if (!macros) {
+    await bot.sendMessage(msg.chat.id, DZIEN_USAGE);
+    return;
+  }
+
+  const dateStr = isYesterday ? isoDateFor(addDays(new Date(), -1)) : todayISO();
+
+  try {
+    saveFoodDay(dateStr, macros);
+    await rebuildDashboardSafe();
+    await bot.sendMessage(
+      msg.chat.id,
+      `✅ Zapisano dzień ${dateStr}: ${macros.kcal} kcal, B ${macros.protein}g, W ${macros.carbs}g, T ${macros.fat}g.`
+    );
+  } catch (err) {
+    console.error('Błąd przy zapisie dnia:', err.message);
+    await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać dnia.');
+  }
+});
+
+const WAGA_USAGE = 'Format: /waga <kg>, np. /waga 72.4 (lub 72,4). Zakres 30-250.';
+
+bot.onText(/^\/waga(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
+  if (!isAuthorized(msg)) return;
+
+  const raw = match[1] && match[1].trim();
+  if (!raw) {
+    await bot.sendMessage(msg.chat.id, WAGA_USAGE);
+    return;
+  }
+
+  const m = raw.match(/^(\d+(?:[.,]\d+)?)$/);
+  if (!m) {
+    await bot.sendMessage(msg.chat.id, WAGA_USAGE);
+    return;
+  }
+
+  const kg = parseFloat(m[1].replace(',', '.'));
+  if (!(kg >= WEIGHT_MIN && kg <= WEIGHT_MAX)) {
+    await bot.sendMessage(msg.chat.id, WAGA_USAGE);
+    return;
+  }
+
+  const dateStr = todayISO();
+
+  try {
+    saveWeightEntry(dateStr, kg);
+    await rebuildDashboardSafe();
+    await bot.sendMessage(msg.chat.id, `✅ Zapisano wagę: ${kg} kg (${dateStr}).`);
+  } catch (err) {
+    console.error('Błąd przy zapisie wagi:', err.message);
+    await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać wagi.');
+  }
+});
+
+const CEL_USAGE =
+  'Format: /cel <kcal> b<białko> w<węgle> t<tłuszcze>, np. /cel 2400 b150 w280 t70.';
+
+bot.onText(/^\/cel(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
+  if (!isAuthorized(msg)) return;
+
+  const raw = match[1] && match[1].trim();
+  if (!raw) {
+    await bot.sendMessage(msg.chat.id, CEL_USAGE);
+    return;
+  }
+
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  const macros = parseMacros(tokens);
+  if (!macros) {
+    await bot.sendMessage(msg.chat.id, CEL_USAGE);
+    return;
+  }
+
+  try {
+    saveTargets(macros);
+    await rebuildDashboardSafe();
+    await bot.sendMessage(
+      msg.chat.id,
+      `✅ Zapisano cele: ${macros.kcal} kcal, B ${macros.protein}g, W ${macros.carbs}g, T ${macros.fat}g.`
+    );
+  } catch (err) {
+    console.error('Błąd przy zapisie celów:', err.message);
+    await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać celów.');
   }
 });
 
