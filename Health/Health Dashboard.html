@@ -12,6 +12,7 @@
   --text-dim: #8b93a3;
   --border: #232838;
   --grid-line: #1c212e;
+  --track: #1c212e;
 
   --c-deep: #7c6fe0;
   --c-light: #5fb3d9;
@@ -19,7 +20,7 @@
   --c-awake: #5b6472;
 
   --c-hrv: #5b9dd9;
-  --c-sleep-bar: #43c6ac;
+  --c-rhr: #e5735a;
 }
 
 @media (prefers-color-scheme: light) {
@@ -30,6 +31,7 @@
     --text-dim: #5b6472;
     --border: #e2e5ea;
     --grid-line: #edeff3;
+    --track: #edeff3;
   }
 }
 
@@ -65,15 +67,13 @@ main.layout {
   max-width: 1200px;
   margin: 0 auto;
   padding: 16px 24px 48px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 
-.chart-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 16px;
+@media (max-width: 900px) {
+  main.layout { grid-template-columns: 1fr; }
 }
 
 .card {
@@ -95,7 +95,7 @@ main.layout {
 .stat-row { margin-bottom: 10px; }
 
 .stat-big {
-  font-size: 2.4rem;
+  font-size: 2.2rem;
   font-weight: 650;
   line-height: 1.1;
 }
@@ -126,9 +126,9 @@ main.layout {
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: 8px 14px;
   margin-top: 10px;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
 }
 
 .legend-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); }
@@ -141,6 +141,38 @@ main.layout {
 }
 
 .legend-item b { color: var(--text); font-weight: 600; }
+
+.ring-row { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }
+
+.ring { width: 110px; height: 110px; flex: none; }
+
+.ring-score { font-size: 30px; font-weight: 700; fill: var(--text); }
+
+.ring-label .dim { font-size: 0.8rem; margin-top: 2px; }
+
+.factor-bars { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
+
+.factor-row { display: grid; grid-template-columns: 96px 1fr 34px; align-items: center; gap: 8px; }
+
+.factor-label { font-size: 0.78rem; color: var(--text-dim); }
+
+.factor-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.factor-fill { display: block; height: 100%; border-radius: 3px; }
+
+.factor-value { font-size: 0.78rem; text-align: right; color: var(--text-dim); }
+
+.tile-desc {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin: 8px 0 0;
+  line-height: 1.4;
+}
 
 .empty-msg { color: var(--text-dim); font-size: 0.9rem; padding: 20px 0; }
 
@@ -156,16 +188,44 @@ footer {
 <body>
 <header>
   <h1>Health Dashboard</h1>
-  <p class="meta">Ostatnia synchronizacja danych: <b>28 września 2026, 17:58</b> &middot; Wygenerowano: 28 września 2026, 17:58</p>
+  <p class="meta">Ostatnia synchronizacja danych: <b>28 września 2026, 18:07</b> &middot; Wygenerowano: 28 września 2026, 18:10</p>
 </header>
 <main class="layout">
-<section class="card hero"><h2>Ostatnia noc (28.09)</h2>
+<section class="card"><h2>Gotowość (Training Readiness)</h2>
+<div class="ring-row">
+  <svg viewBox="0 0 140 140" class="ring" role="img" aria-label="Pierścień gotowości">
+<circle cx="70.0" cy="70.0" r="63.0" fill="none" stroke="var(--border)" stroke-width="14" />
+<circle cx="70.0" cy="70.0" r="63.0" fill="none" stroke="#4fb477" stroke-width="14"
+  stroke-linecap="round" stroke-dasharray="395.8 395.8"
+  transform="rotate(-90 70.0 70.0)" />
+<text x="70.0" y="71.0" text-anchor="middle" dominant-baseline="middle" class="ring-score">100</text>
+</svg>
+  <div class="ring-label">
+    <div class="stat-sub">Poziom: <b>Optymalna</b></div>
+    <div class="dim">28.09</div>
+  </div>
+</div>
+<div class="factor-bars"><div class="factor-row"><span class="factor-label">Sen</span><span class="factor-track"><span class="factor-fill" style="width:93%;background:#4fb477"></span></span><span class="factor-value">93%</span></div><div class="factor-row"><span class="factor-label">HRV</span><span class="factor-track"><span class="factor-fill" style="width:87%;background:#4fb477"></span></span><span class="factor-value">87%</span></div><div class="factor-row"><span class="factor-label">Historia snu</span><span class="factor-track"><span class="factor-fill" style="width:97%;background:#4fb477"></span></span><span class="factor-value">97%</span></div><div class="factor-row"><span class="factor-label">Stres</span><span class="factor-track"><span class="factor-fill" style="width:98%;background:#4fb477"></span></span><span class="factor-value">98%</span></div><div class="factor-row"><span class="factor-label">Czas regeneracji</span><span class="factor-track"><span class="factor-fill" style="width:96%;background:#4fb477"></span></span><span class="factor-value">96%</span></div><div class="factor-row"><span class="factor-label">Obciążenie</span><span class="factor-track"><span class="factor-fill" style="width:95%;background:#4fb477"></span></span><span class="factor-value">95%</span></div></div>
+<p class="tile-desc">Organizm jest w optymalnej formie do treningu. Wszystkie mierzone składowe są w dobrym zakresie.</p>
+</section><section class="card"><h2>HRV — ostatnie 14 nocy</h2>
+<div class="stat-row">
+  <div class="stat-big">104 ms</div>
+  <div class="stat-sub">Zbalansowane</div>
+</div>
+<svg viewBox="0 0 480 170" class="chart" role="img" aria-label="Wykres liniowy"><line x1="40" y1="146.0" x2="468" y2="146.0" class="grid-line" /><text x="34" y="149.0" class="axis-label" text-anchor="end">61 ms</text><line x1="40" y1="80.0" x2="468" y2="80.0" class="grid-line" /><text x="34" y="83.0" class="axis-label" text-anchor="end">91 ms</text><line x1="40" y1="14.0" x2="468" y2="14.0" class="grid-line" /><text x="34" y="17.0" class="axis-label" text-anchor="end">121 ms</text><rect x="40" y="26.8" width="428.0" height="106.5" class="baseline-band" /><polyline points="40.0,60.0 72.9,51.2 105.8,71.1 138.8,104.4 171.7,104.4 204.6,80.0 237.5,108.8 270.5,80.0 303.4,88.9 336.3,60.0 369.2,51.2 402.2,66.7 435.1,55.6 468.0,51.2" fill="none" stroke="var(--c-hrv)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" /><circle cx="40.0" cy="60.0" r="3" fill="var(--c-hrv)" /><circle cx="72.9" cy="51.2" r="3" fill="var(--c-hrv)" /><circle cx="105.8" cy="71.1" r="3" fill="var(--c-hrv)" /><circle cx="138.8" cy="104.4" r="3" fill="var(--c-hrv)" /><circle cx="171.7" cy="104.4" r="3" fill="var(--c-hrv)" /><circle cx="204.6" cy="80.0" r="3" fill="var(--c-hrv)" /><circle cx="237.5" cy="108.8" r="3" fill="var(--c-hrv)" /><circle cx="270.5" cy="80.0" r="3" fill="var(--c-hrv)" /><circle cx="303.4" cy="88.9" r="3" fill="var(--c-hrv)" /><circle cx="336.3" cy="60.0" r="3" fill="var(--c-hrv)" /><circle cx="369.2" cy="51.2" r="3" fill="var(--c-hrv)" /><circle cx="402.2" cy="66.7" r="3" fill="var(--c-hrv)" /><circle cx="435.1" cy="55.6" r="3" fill="var(--c-hrv)" /><circle cx="468.0" cy="51.2" r="3" fill="var(--c-hrv)" /><text x="40.0" y="164" class="axis-label" text-anchor="middle">15.09</text><text x="105.8" y="164" class="axis-label" text-anchor="middle">17.09</text><text x="171.7" y="164" class="axis-label" text-anchor="middle">19.09</text><text x="237.5" y="164" class="axis-label" text-anchor="middle">21.09</text><text x="303.4" y="164" class="axis-label" text-anchor="middle">23.09</text><text x="369.2" y="164" class="axis-label" text-anchor="middle">25.09</text><text x="435.1" y="164" class="axis-label" text-anchor="middle">27.09</text><text x="468.0" y="164" class="axis-label" text-anchor="middle">28.09</text></svg>
+</section><section class="card"><h2>Tętno spoczynkowe — ostatnie 14 nocy</h2>
+<div class="stat-row">
+  <div class="stat-big">43 bpm</div>
+  <div class="stat-sub">Tętno spoczynkowe, ostatni pomiar</div>
+</div>
+<svg viewBox="0 0 480 170" class="chart" role="img" aria-label="Wykres liniowy"><line x1="40" y1="146.0" x2="468" y2="146.0" class="grid-line" /><text x="34" y="149.0" class="axis-label" text-anchor="end">42 bpm</text><line x1="40" y1="80.0" x2="468" y2="80.0" class="grid-line" /><text x="34" y="83.0" class="axis-label" text-anchor="end">48 bpm</text><line x1="40" y1="14.0" x2="468" y2="14.0" class="grid-line" /><text x="34" y="17.0" class="axis-label" text-anchor="end">53 bpm</text><polyline points="40.0,85.9 72.9,97.7 105.8,97.7 138.8,26.8 171.7,38.6 204.6,85.9 237.5,62.3 270.5,74.1 303.4,109.6 336.3,109.6 369.2,121.4 402.2,97.7 435.1,109.6 468.0,133.2" fill="none" stroke="var(--c-rhr)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" /><circle cx="40.0" cy="85.9" r="3" fill="var(--c-rhr)" /><circle cx="72.9" cy="97.7" r="3" fill="var(--c-rhr)" /><circle cx="105.8" cy="97.7" r="3" fill="var(--c-rhr)" /><circle cx="138.8" cy="26.8" r="3" fill="var(--c-rhr)" /><circle cx="171.7" cy="38.6" r="3" fill="var(--c-rhr)" /><circle cx="204.6" cy="85.9" r="3" fill="var(--c-rhr)" /><circle cx="237.5" cy="62.3" r="3" fill="var(--c-rhr)" /><circle cx="270.5" cy="74.1" r="3" fill="var(--c-rhr)" /><circle cx="303.4" cy="109.6" r="3" fill="var(--c-rhr)" /><circle cx="336.3" cy="109.6" r="3" fill="var(--c-rhr)" /><circle cx="369.2" cy="121.4" r="3" fill="var(--c-rhr)" /><circle cx="402.2" cy="97.7" r="3" fill="var(--c-rhr)" /><circle cx="435.1" cy="109.6" r="3" fill="var(--c-rhr)" /><circle cx="468.0" cy="133.2" r="3" fill="var(--c-rhr)" /><text x="40.0" y="164" class="axis-label" text-anchor="middle">15.09</text><text x="105.8" y="164" class="axis-label" text-anchor="middle">17.09</text><text x="171.7" y="164" class="axis-label" text-anchor="middle">19.09</text><text x="237.5" y="164" class="axis-label" text-anchor="middle">21.09</text><text x="303.4" y="164" class="axis-label" text-anchor="middle">23.09</text><text x="369.2" y="164" class="axis-label" text-anchor="middle">25.09</text><text x="435.1" y="164" class="axis-label" text-anchor="middle">27.09</text><text x="468.0" y="164" class="axis-label" text-anchor="middle">28.09</text></svg>
+</section><section class="card"><h2>Sen — ostatnia noc (28.09)</h2>
 <div class="stat-row">
   <div class="stat-big">8h 20m</div>
-  <div class="stat-sub">Ocena snu: <b>93/100 &middot; Doskonały</b></div>
+  <div class="stat-sub">Zasypianie &ndash; pobudka: <b>01:50 &ndash; 10:15</b> &middot; Ocena snu: <b>93/100 &middot; Doskonały</b></div>
 </div>
-<svg viewBox="0 0 640 28" class="phase-bar" role="img" aria-label="Fazy snu"><rect x="0.0" y="0" width="92.5" height="28" fill="var(--c-deep)" /><rect x="92.5" y="0" width="409.3" height="28" fill="var(--c-light)" /><rect x="501.9" y="0" width="133.1" height="28" fill="var(--c-rem)" /><rect x="634.9" y="0" width="5.1" height="28" fill="var(--c-awake)" /></svg><div class="legend"><span class="legend-item"><i style="background:var(--c-deep)"></i>Głęboki <b>1h 13m</b> <span class="dim">(14%)</span></span><span class="legend-item"><i style="background:var(--c-light)"></i>Lekki <b>5h 23m</b> <span class="dim">(64%)</span></span><span class="legend-item"><i style="background:var(--c-rem)"></i>REM <b>1h 45m</b> <span class="dim">(21%)</span></span><span class="legend-item"><i style="background:var(--c-awake)"></i>Wybudzenia <b>0h 04m</b> <span class="dim">(1%)</span></span></div>
-</section><div class="chart-row"><section class="card"><h2>Czas snu — ostatnie 14 nocy</h2><svg viewBox="0 0 560 180" class="chart" role="img" aria-label="Wykres słupkowy"><line x1="42" y1="154.0" x2="546" y2="154.0" class="grid-line" /><text x="36" y="157.0" class="axis-label" text-anchor="end">0.0h</text><line x1="42" y1="85.0" x2="546" y2="85.0" class="grid-line" /><text x="36" y="88.0" class="axis-label" text-anchor="end">4.8h</text><line x1="42" y1="16.0" x2="546" y2="16.0" class="grid-line" /><text x="36" y="19.0" class="axis-label" text-anchor="end">9.6h</text><rect x="49.2" y="85.6" width="21.6" height="68.4" rx="2" fill="var(--c-sleep-bar)" /><text x="60.0" y="174" class="axis-label" text-anchor="middle">15.09</text><rect x="85.2" y="50.8" width="21.6" height="103.2" rx="2" fill="var(--c-sleep-bar)" /><rect x="121.2" y="70.8" width="21.6" height="83.2" rx="2" fill="var(--c-sleep-bar)" /><text x="132.0" y="174" class="axis-label" text-anchor="middle">17.09</text><rect x="157.2" y="50.4" width="21.6" height="103.6" rx="2" fill="var(--c-sleep-bar)" /><rect x="193.2" y="105.6" width="21.6" height="48.4" rx="2" fill="var(--c-sleep-bar)" /><text x="204.0" y="174" class="axis-label" text-anchor="middle">19.09</text><rect x="229.2" y="68.9" width="21.6" height="85.1" rx="2" fill="var(--c-sleep-bar)" /><rect x="265.2" y="39.3" width="21.6" height="114.7" rx="2" fill="var(--c-sleep-bar)" /><text x="276.0" y="174" class="axis-label" text-anchor="middle">21.09</text><rect x="301.2" y="77.5" width="21.6" height="76.5" rx="2" fill="var(--c-sleep-bar)" /><rect x="337.2" y="84.2" width="21.6" height="69.8" rx="2" fill="var(--c-sleep-bar)" /><text x="348.0" y="174" class="axis-label" text-anchor="middle">23.09</text><rect x="373.2" y="34.1" width="21.6" height="119.9" rx="2" fill="var(--c-sleep-bar)" /><rect x="409.2" y="88.8" width="21.6" height="65.2" rx="2" fill="var(--c-sleep-bar)" /><text x="420.0" y="174" class="axis-label" text-anchor="middle">25.09</text><rect x="445.2" y="45.4" width="21.6" height="108.6" rx="2" fill="var(--c-sleep-bar)" /><rect x="481.2" y="51.4" width="21.6" height="102.6" rx="2" fill="var(--c-sleep-bar)" /><text x="492.0" y="174" class="axis-label" text-anchor="middle">27.09</text><rect x="517.2" y="34.0" width="21.6" height="120.0" rx="2" fill="var(--c-sleep-bar)" /><text x="528.0" y="174" class="axis-label" text-anchor="middle">28.09</text></svg></section><section class="card"><h2>HRV — ostatnie 14 nocy</h2><p class="tile-sub">Ostatnia noc: <b>104 ms</b> &middot; Zbalansowane</p><svg viewBox="0 0 560 180" class="chart" role="img" aria-label="Wykres liniowy"><line x1="42" y1="154.0" x2="546" y2="154.0" class="grid-line" /><text x="36" y="157.0" class="axis-label" text-anchor="end">61 ms</text><line x1="42" y1="85.0" x2="546" y2="85.0" class="grid-line" /><text x="36" y="88.0" class="axis-label" text-anchor="end">91 ms</text><line x1="42" y1="16.0" x2="546" y2="16.0" class="grid-line" /><text x="36" y="19.0" class="axis-label" text-anchor="end">121 ms</text><rect x="42" y="29.4" width="504.0" height="111.3" class="baseline-band" /><polyline points="42.0,64.1 80.8,54.9 119.5,75.7 158.3,110.5 197.1,110.5 235.8,85.0 274.6,115.1 313.4,85.0 352.2,94.3 390.9,64.1 429.7,54.9 468.5,71.1 507.2,59.5 546.0,54.9" fill="none" stroke="var(--c-hrv)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" /><circle cx="42.0" cy="64.1" r="3" fill="var(--c-hrv)" /><circle cx="80.8" cy="54.9" r="3" fill="var(--c-hrv)" /><circle cx="119.5" cy="75.7" r="3" fill="var(--c-hrv)" /><circle cx="158.3" cy="110.5" r="3" fill="var(--c-hrv)" /><circle cx="197.1" cy="110.5" r="3" fill="var(--c-hrv)" /><circle cx="235.8" cy="85.0" r="3" fill="var(--c-hrv)" /><circle cx="274.6" cy="115.1" r="3" fill="var(--c-hrv)" /><circle cx="313.4" cy="85.0" r="3" fill="var(--c-hrv)" /><circle cx="352.2" cy="94.3" r="3" fill="var(--c-hrv)" /><circle cx="390.9" cy="64.1" r="3" fill="var(--c-hrv)" /><circle cx="429.7" cy="54.9" r="3" fill="var(--c-hrv)" /><circle cx="468.5" cy="71.1" r="3" fill="var(--c-hrv)" /><circle cx="507.2" cy="59.5" r="3" fill="var(--c-hrv)" /><circle cx="546.0" cy="54.9" r="3" fill="var(--c-hrv)" /><text x="42.0" y="174" class="axis-label" text-anchor="middle">15.09</text><text x="119.5" y="174" class="axis-label" text-anchor="middle">17.09</text><text x="197.1" y="174" class="axis-label" text-anchor="middle">19.09</text><text x="274.6" y="174" class="axis-label" text-anchor="middle">21.09</text><text x="352.2" y="174" class="axis-label" text-anchor="middle">23.09</text><text x="429.7" y="174" class="axis-label" text-anchor="middle">25.09</text><text x="507.2" y="174" class="axis-label" text-anchor="middle">27.09</text><text x="546.0" y="174" class="axis-label" text-anchor="middle">28.09</text></svg></section></div>
+<svg viewBox="0 0 640 28" class="phase-bar" role="img" aria-label="Fazy snu"><rect x="0.0" y="0" width="92.5" height="28" fill="var(--c-deep)" /><rect x="92.5" y="0" width="133.1" height="28" fill="var(--c-rem)" /><rect x="225.6" y="0" width="409.3" height="28" fill="var(--c-light)" /><rect x="634.9" y="0" width="5.1" height="28" fill="var(--c-awake)" /></svg><div class="legend"><span class="legend-item"><i style="background:var(--c-deep)"></i>Głęboki <b>1h 13m</b> <span class="dim">(14%)</span></span><span class="legend-item"><i style="background:var(--c-rem)"></i>REM <b>1h 45m</b> <span class="dim">(21%)</span></span><span class="legend-item"><i style="background:var(--c-light)"></i>Lekki <b>5h 23m</b> <span class="dim">(64%)</span></span><span class="legend-item"><i style="background:var(--c-awake)"></i>Wybudzenia <b>0h 04m</b> <span class="dim">(1%)</span></span></div>
+</section>
 </main>
 <footer>Dane z Garmin Connect, zapisane lokalnie w data/garmin. Wygenerowano przez scripts/build_dashboard.py.</footer>
 </body>

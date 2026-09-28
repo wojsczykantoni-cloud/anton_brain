@@ -12,14 +12,17 @@ requests). Dark theme by default, switching to a light theme when the
 system prefers light (prefers-color-scheme). Days with missing data are
 rendered as gaps, never errors.
 
-Tiles: last night's sleep (duration, phase bar, score), 14-night sleep
-duration bars, and 14-night HRV line with a baseline band.
+3-column grid. Row 1: Training Readiness ring + per-factor bars (only the
+factors actually present in the data) with a rule-based Polish summary,
+HRV trend, resting heart rate trend. Row 2: last night's sleep (duration,
+start/end times, score, phase bar); the other two cells are left empty
+for future tiles.
 """
 
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +50,41 @@ HRV_STATUS_PL = {
     "UNBALANCED": "Niezbalansowane",
     "LOW": "Niskie",
     "POOR": "Słabe",
+}
+
+READINESS_LEVEL_PL = {
+    "HIGH": "Wysoka",
+    "MODERATE": "Umiarkowana",
+    "LOW": "Niska",
+    "VERY_LOW": "Bardzo niska",
+    "PRIME": "Optymalna",
+}
+
+READINESS_COLORS = {
+    "PRIME": "#4fb477",
+    "HIGH": "#4fb477",
+    "MODERATE": "#e3ad4c",
+    "LOW": "#d98a4a",
+    "VERY_LOW": "#d9694f",
+}
+READINESS_DEFAULT_COLOR = "#7c6fe0"
+
+FACTOR_ORDER = ["sleep", "hrv", "sleep_history", "stress_history", "recovery_time", "acwr"]
+FACTOR_LABELS_PL = {
+    "sleep": "Sen",
+    "hrv": "HRV",
+    "sleep_history": "Historia snu",
+    "stress_history": "Stres",
+    "recovery_time": "Czas regeneracji",
+    "acwr": "Obciążenie",
+}
+
+LEVEL_PHRASES_PL = {
+    "PRIME": "Organizm jest w optymalnej formie do treningu.",
+    "HIGH": "Organizm jest dobrze przygotowany do wysiłku.",
+    "MODERATE": "Organizm jest umiarkowanie gotowy na wysiłek.",
+    "LOW": "Organizm sygnalizuje ograniczoną gotowość na wysiłek.",
+    "VERY_LOW": "Organizm potrzebuje dziś przede wszystkim odpoczynku.",
 }
 
 
@@ -137,6 +175,15 @@ def fmt_generated_at() -> str:
     return fmt_dt_pl(datetime.now())
 
 
+def fmt_local_time(ms: Any) -> str | None:
+    """Garmin's 'Local' sleep timestamps are epoch-ms already shifted by the
+    local UTC offset, so reading them back as UTC yields the correct
+    wall-clock local time."""
+    if not isinstance(ms, (int, float)):
+        return None
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%H:%M")
+
+
 def pl_word(value_pl_map: dict[str, str], raw: Any) -> str:
     if not raw:
         return "brak danych"
@@ -147,16 +194,15 @@ def pl_word(value_pl_map: dict[str, str], raw: Any) -> str:
 # SVG chart builders
 # --------------------------------------------------------------------------
 
-CHART_W = 560
-CHART_H = 180
-PAD_L = 42
-PAD_R = 14
-PAD_T = 16
-PAD_B = 26
+CHART_W = 480
+CHART_H = 170
+PAD_L = 40
+PAD_R = 12
+PAD_T = 14
+PAD_B = 24
 
 
 def _scale_points(
-    labels: list[str],
     values: list[float | None],
     y_min: float,
     y_max: float,
@@ -200,7 +246,7 @@ def svg_line_chart(
     y_min -= pad
     y_max += pad
 
-    points = _scale_points(labels, values, y_min, y_max)
+    points = _scale_points(values, y_min, y_max)
     inner_w = CHART_W - PAD_L - PAD_R
 
     parts: list[str] = [
@@ -208,7 +254,6 @@ def svg_line_chart(
         f'aria-label="Wykres liniowy">'
     ]
 
-    # gridlines + y-axis labels (min/mid/max)
     for frac in (0.0, 0.5, 1.0):
         gy = PAD_T + (CHART_H - PAD_T - PAD_B) * (1 - frac)
         gv = y_min + (y_max - y_min) * frac
@@ -221,7 +266,6 @@ def svg_line_chart(
             f'{y_fmt.format(gv)}{unit}</text>'
         )
 
-    # baseline band (e.g. HRV balanced range)
     if baseline_band:
         lo, hi = baseline_band
         y_lo = PAD_T + (CHART_H - PAD_T - PAD_B) * (1 - (lo - y_min) / (y_max - y_min))
@@ -231,7 +275,6 @@ def svg_line_chart(
             f'height="{abs(y_lo - y_hi):.1f}" class="baseline-band" />'
         )
 
-    # line segments, broken across gaps (None values)
     segment: list[str] = []
     for x, y in points:
         if y is None:
@@ -251,14 +294,12 @@ def svg_line_chart(
             f'stroke-linecap="round" />'
         )
 
-    # dots
     for x, y in points:
         if y is not None:
             parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}" />')
 
-    # x-axis labels (thin out if many points)
     n = len(labels)
-    step = max(1, round(n / 7))
+    step = max(1, round(n / 6))
     for i, label in enumerate(labels):
         if i % step != 0 and i != n - 1:
             continue
@@ -272,66 +313,11 @@ def svg_line_chart(
     return "".join(parts)
 
 
-def svg_bar_chart(
-    labels: list[str],
-    values: list[float | None],
-    color: str,
-    unit: str = "",
-    y_fmt: str = "{:.0f}",
-) -> str:
-    non_null = [v for v in values if v is not None]
-    if not non_null:
-        return '<p class="empty-msg">Brak danych do wykresu.</p>'
-
-    y_max = max(non_null) * 1.15 or 1.0
-    n = len(values)
-    inner_w = CHART_W - PAD_L - PAD_R
-    inner_h = CHART_H - PAD_T - PAD_B
-    slot_w = inner_w / n
-    bar_w = slot_w * 0.6
-
-    parts = [
-        f'<svg viewBox="0 0 {CHART_W} {CHART_H}" class="chart" role="img" '
-        f'aria-label="Wykres słupkowy">'
-    ]
-
-    for frac in (0.0, 0.5, 1.0):
-        gy = PAD_T + inner_h * (1 - frac)
-        gv = y_max * frac
-        parts.append(
-            f'<line x1="{PAD_L}" y1="{gy:.1f}" x2="{CHART_W - PAD_R}" y2="{gy:.1f}" '
-            f'class="grid-line" />'
-        )
-        parts.append(
-            f'<text x="{PAD_L - 6}" y="{gy + 3:.1f}" class="axis-label" text-anchor="end">'
-            f'{y_fmt.format(gv)}{unit}</text>'
-        )
-
-    step = max(1, round(n / 7))
-    for i, v in enumerate(values):
-        x = PAD_L + slot_w * i + (slot_w - bar_w) / 2
-        if v is not None:
-            bar_h = (v / y_max) * inner_h if y_max else 0
-            y = PAD_T + inner_h - bar_h
-            parts.append(
-                f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" '
-                f'rx="2" fill="{color}" />'
-            )
-        if i % step == 0 or i == n - 1:
-            parts.append(
-                f'<text x="{x + bar_w / 2:.1f}" y="{CHART_H - 6}" class="axis-label" '
-                f'text-anchor="middle">{esc(labels[i])}</text>'
-            )
-
-    parts.append("</svg>")
-    return "".join(parts)
-
-
-def svg_phase_bar(deep: Any, light: Any, rem: Any, awake: Any) -> str:
+def svg_phase_bar(deep: Any, rem: Any, light: Any, awake: Any) -> str:
     segments = [
         ("Głęboki", deep, "var(--c-deep)"),
-        ("Lekki", light, "var(--c-light)"),
         ("REM", rem, "var(--c-rem)"),
+        ("Lekki", light, "var(--c-light)"),
         ("Wybudzenia", awake, "var(--c-awake)"),
     ]
     total = sum(v for _, v, _ in segments if isinstance(v, (int, float)))
@@ -366,32 +352,109 @@ def svg_phase_bar(deep: Any, light: Any, rem: Any, awake: Any) -> str:
     return "".join(parts)
 
 
+def svg_ring(score: Any, color: str, size: int = 140, stroke: int = 14) -> str:
+    if score is None:
+        return '<p class="empty-msg">Brak danych.</p>'
+    r = (size - stroke) / 2
+    cx = cy = size / 2
+    circumference = 2 * 3.14159265 * r
+    frac = max(0.0, min(1.0, score / 100))
+    dash = circumference * frac
+    return f'''<svg viewBox="0 0 {size} {size}" class="ring" role="img" aria-label="Pierścień gotowości">
+<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="var(--border)" stroke-width="{stroke}" />
+<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="{stroke}"
+  stroke-linecap="round" stroke-dasharray="{dash:.1f} {circumference:.1f}"
+  transform="rotate(-90 {cx} {cy})" />
+<text x="{cx}" y="{cy + 1}" text-anchor="middle" dominant-baseline="middle" class="ring-score">{int(score)}</text>
+</svg>'''
+
+
+def factor_bar_color(pct: float) -> str:
+    if pct >= 80:
+        return "#4fb477"
+    if pct >= 60:
+        return "#e3ad4c"
+    return "#d9694f"
+
+
+def factor_bars_html(factors: dict[str, Any]) -> str:
+    present = [(k, factors.get(k)) for k in FACTOR_ORDER if factors.get(k) is not None]
+    if not present:
+        return '<p class="empty-msg">Brak danych o składowych gotowości.</p>'
+
+    rows = []
+    for key, value in present:
+        color = factor_bar_color(value)
+        rows.append(
+            f'<div class="factor-row">'
+            f'<span class="factor-label">{esc(FACTOR_LABELS_PL[key])}</span>'
+            f'<span class="factor-track"><span class="factor-fill" '
+            f'style="width:{max(0, min(100, value)):.0f}%;background:{color}"></span></span>'
+            f'<span class="factor-value">{int(value)}%</span>'
+            f"</div>"
+        )
+    return f'<div class="factor-bars">{"".join(rows)}</div>'
+
+
+def build_readiness_description(score: Any, level: Any, factors: dict[str, Any]) -> str:
+    if score is None:
+        return ""
+    present = {k: v for k, v in factors.items() if v is not None}
+    sentence1 = LEVEL_PHRASES_PL.get(level, f"Gotowość na dziś wynosi {int(score)}/100.")
+    if not present:
+        return sentence1
+
+    worst_key = min(present, key=present.get)
+    worst_val = present[worst_key]
+    best_key = max(present, key=present.get)
+    best_val = present[best_key]
+
+    if worst_val < 70 and worst_key != best_key:
+        sentence2 = (
+            f"Najbardziej obniża ją {FACTOR_LABELS_PL[worst_key].lower()} ({worst_val:.0f}%), "
+            f"a najlepiej wygląda {FACTOR_LABELS_PL[best_key].lower()} ({best_val:.0f}%)."
+        )
+    elif worst_val < 70:
+        sentence2 = f"Najbardziej obniża ją {FACTOR_LABELS_PL[worst_key].lower()} ({worst_val:.0f}%)."
+    else:
+        sentence2 = "Wszystkie mierzone składowe są w dobrym zakresie."
+
+    return f"{sentence1} {sentence2}"
+
+
 # --------------------------------------------------------------------------
 # Tile builders
 # --------------------------------------------------------------------------
 
-def build_last_night_tile(records: list[dict[str, Any]]) -> str:
-    with_sleep = [r for r in records if dig(r, "sleep", "total_seconds") is not None]
-    if not with_sleep:
-        return _card("Ostatnia noc", '<p class="empty-msg">Brak danych o śnie.</p>', extra_class="hero")
+def build_readiness_tile(records: list[dict[str, Any]]) -> str:
+    with_tr = [r for r in records if dig(r, "training_readiness", "score") is not None]
+    if not with_tr:
+        return _card("Gotowość (Training Readiness)", '<p class="empty-msg">Brak danych Training Readiness.</p>')
 
-    r = with_sleep[-1]
-    sleep = r.get("sleep") or {}
-    d: date = r["_date"]
+    latest = with_tr[-1]
+    tr = latest.get("training_readiness") or {}
+    score = tr.get("score")
+    level = tr.get("level")
+    factors = tr.get("factors") or {}
+    color = READINESS_COLORS.get(level, READINESS_DEFAULT_COLOR)
 
-    total = fmt_hms(sleep.get("total_seconds"))
-    score = sleep.get("score")
-    qualifier = pl_word(SLEEP_QUALIFIER_PL, sleep.get("score_qualifier"))
-    score_text = f"{int(score)}/100 &middot; {esc(qualifier)}" if score is not None else "brak danych"
+    ring = svg_ring(score, color)
+    level_pl = pl_word(READINESS_LEVEL_PL, level)
+    bars = factor_bars_html(factors)
+    description = esc(build_readiness_description(score, level, factors))
 
     body = f'''
-<div class="stat-row">
-  <div class="stat-big">{total}</div>
-  <div class="stat-sub">Ocena snu: <b>{score_text}</b></div>
+<div class="ring-row">
+  {ring}
+  <div class="ring-label">
+    <div class="stat-sub">Poziom: <b>{esc(level_pl)}</b></div>
+    <div class="dim">{fmt_short_date(latest["_date"])}</div>
+  </div>
 </div>
-{svg_phase_bar(sleep.get("deep_seconds"), sleep.get("light_seconds"), sleep.get("rem_seconds"), sleep.get("awake_seconds"))}
+{bars}
+<p class="tile-desc">{description}</p>
 '''
-    return _card(f"Ostatnia noc ({fmt_short_date(d)})", body, extra_class="hero")
+    return _card("Gotowość (Training Readiness)", body)
 
 
 def build_hrv_tile(records: list[dict[str, Any]]) -> str:
@@ -411,25 +474,70 @@ def build_hrv_tile(records: list[dict[str, Any]]) -> str:
     latest_status = next(
         (dig(r, "hrv", "status") for r in reversed(trend) if dig(r, "hrv", "status")), None
     )
-    sub = (
-        f'Ostatnia noc: <b>{latest:.0f} ms</b> &middot; {esc(pl_word(HRV_STATUS_PL, latest_status))}'
-        if latest is not None
-        else "Ostatnia noc: brak danych"
-    )
+    value_text = f"{latest:.0f} ms" if latest is not None else "brak danych"
+    status_text = pl_word(HRV_STATUS_PL, latest_status) if latest is not None else ""
 
     chart = svg_line_chart(labels, values, "var(--c-hrv)", unit=" ms", baseline_band=baseline_band)
-    body = f'<p class="tile-sub">{sub}</p>{chart}'
+    body = f'''
+<div class="stat-row">
+  <div class="stat-big">{value_text}</div>
+  <div class="stat-sub">{esc(status_text)}</div>
+</div>
+{chart}
+'''
     return _card("HRV — ostatnie 14 nocy", body)
 
 
-def build_sleep_duration_tile(records: list[dict[str, Any]]) -> str:
+def build_rhr_tile(records: list[dict[str, Any]]) -> str:
     trend = records[-TREND_DAYS:]
     labels = [fmt_short_date(r["_date"]) for r in trend]
-    values_sec = [dig(r, "sleep", "total_seconds") for r in trend]
-    values_h = [v / 3600 if v is not None else None for v in values_sec]
+    values = [r.get("resting_heart_rate") for r in trend]
 
-    chart = svg_bar_chart(labels, values_h, "var(--c-sleep-bar)", unit="h", y_fmt="{:.1f}")
-    return _card("Czas snu — ostatnie 14 nocy", chart)
+    latest = next((v for v in reversed(values) if v is not None), None)
+    value_text = f"{int(latest)} bpm" if latest is not None else "brak danych"
+
+    chart = svg_line_chart(labels, values, "var(--c-rhr)", unit=" bpm")
+    body = f'''
+<div class="stat-row">
+  <div class="stat-big">{value_text}</div>
+  <div class="stat-sub">Tętno spoczynkowe, ostatni pomiar</div>
+</div>
+{chart}
+'''
+    return _card("Tętno spoczynkowe — ostatnie 14 nocy", body)
+
+
+def build_sleep_tile(records: list[dict[str, Any]]) -> str:
+    with_sleep = [r for r in records if dig(r, "sleep", "total_seconds") is not None]
+    if not with_sleep:
+        return _card("Sen — ostatnia noc", '<p class="empty-msg">Brak danych o śnie.</p>')
+
+    r = with_sleep[-1]
+    sleep = r.get("sleep") or {}
+    d: date = r["_date"]
+
+    total = fmt_hms(sleep.get("total_seconds"))
+    start_txt = fmt_local_time(sleep.get("start_local_ms"))
+    end_txt = fmt_local_time(sleep.get("end_local_ms"))
+    times_text = f"{start_txt} &ndash; {end_txt}" if start_txt and end_txt else "brak danych"
+
+    score = sleep.get("score")
+    qualifier = pl_word(SLEEP_QUALIFIER_PL, sleep.get("score_qualifier"))
+    score_text = f"{int(score)}/100 &middot; {esc(qualifier)}" if score is not None else "brak danych"
+
+    phase_bar = svg_phase_bar(
+        sleep.get("deep_seconds"), sleep.get("rem_seconds"),
+        sleep.get("light_seconds"), sleep.get("awake_seconds"),
+    )
+
+    body = f'''
+<div class="stat-row">
+  <div class="stat-big">{total}</div>
+  <div class="stat-sub">Zasypianie &ndash; pobudka: <b>{times_text}</b> &middot; Ocena snu: <b>{score_text}</b></div>
+</div>
+{phase_bar}
+'''
+    return _card(f"Sen — ostatnia noc ({fmt_short_date(d)})", body)
 
 
 def _card(title: str, body_html: str, extra_class: str = "") -> str:
@@ -449,6 +557,7 @@ CSS = """
   --text-dim: #8b93a3;
   --border: #232838;
   --grid-line: #1c212e;
+  --track: #1c212e;
 
   --c-deep: #7c6fe0;
   --c-light: #5fb3d9;
@@ -456,7 +565,7 @@ CSS = """
   --c-awake: #5b6472;
 
   --c-hrv: #5b9dd9;
-  --c-sleep-bar: #43c6ac;
+  --c-rhr: #e5735a;
 }
 
 @media (prefers-color-scheme: light) {
@@ -467,6 +576,7 @@ CSS = """
     --text-dim: #5b6472;
     --border: #e2e5ea;
     --grid-line: #edeff3;
+    --track: #edeff3;
   }
 }
 
@@ -502,15 +612,13 @@ main.layout {
   max-width: 1200px;
   margin: 0 auto;
   padding: 16px 24px 48px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 
-.chart-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 16px;
+@media (max-width: 900px) {
+  main.layout { grid-template-columns: 1fr; }
 }
 
 .card {
@@ -532,7 +640,7 @@ main.layout {
 .stat-row { margin-bottom: 10px; }
 
 .stat-big {
-  font-size: 2.4rem;
+  font-size: 2.2rem;
   font-weight: 650;
   line-height: 1.1;
 }
@@ -563,9 +671,9 @@ main.layout {
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: 8px 14px;
   margin-top: 10px;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
 }
 
 .legend-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); }
@@ -578,6 +686,38 @@ main.layout {
 }
 
 .legend-item b { color: var(--text); font-weight: 600; }
+
+.ring-row { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }
+
+.ring { width: 110px; height: 110px; flex: none; }
+
+.ring-score { font-size: 30px; font-weight: 700; fill: var(--text); }
+
+.ring-label .dim { font-size: 0.8rem; margin-top: 2px; }
+
+.factor-bars { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
+
+.factor-row { display: grid; grid-template-columns: 96px 1fr 34px; align-items: center; gap: 8px; }
+
+.factor-label { font-size: 0.78rem; color: var(--text-dim); }
+
+.factor-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.factor-fill { display: block; height: 100%; border-radius: 3px; }
+
+.factor-value { font-size: 0.78rem; text-align: right; color: var(--text-dim); }
+
+.tile-desc {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin: 8px 0 0;
+  line-height: 1.4;
+}
 
 .empty-msg { color: var(--text-dim); font-size: 0.9rem; padding: 20px 0; }
 
@@ -596,14 +736,12 @@ def build_html(records: list[dict[str, Any]]) -> str:
         layout = '<section class="card"><h2>Brak danych</h2><p class="empty-msg">' \
                  'Uruchom scripts/garmin_sync.py, aby pobrać dane z Garmin Connect.</p></section>'
     else:
-        hero = build_last_night_tile(records)
-        chart_row = (
-            f'<div class="chart-row">'
-            f"{build_sleep_duration_tile(records)}"
-            f"{build_hrv_tile(records)}"
-            f"</div>"
+        layout = (
+            build_readiness_tile(records)
+            + build_hrv_tile(records)
+            + build_rhr_tile(records)
+            + build_sleep_tile(records)
         )
-        layout = hero + chart_row
 
     generated = esc(fmt_generated_at())
     sync_dt = latest_sync_dt(records)
