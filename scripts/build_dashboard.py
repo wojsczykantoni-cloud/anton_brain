@@ -259,7 +259,7 @@ def fmt_big_with_target(value: Any, target: Any, unit: str) -> str:
 
 CHART_W = 320
 CHART_H = 100
-PAD_L = 38
+PAD_L = 46
 PAD_R = 14
 PAD_T = 10
 PAD_B = 18
@@ -667,7 +667,7 @@ def build_hrv_tile(records: list[dict[str, Any]]) -> str:
     sub_text = " · ".join(sub_parts)
 
     chart = svg_line_chart(
-        labels, values, "var(--c-hrv)", unit=" ms", baseline_band=baseline_band, x_labels="dense"
+        labels, values, "var(--c-hrv)", unit=" ms", baseline_band=baseline_band
     )
     body = f'''
 <div class="stat-row">
@@ -687,7 +687,7 @@ def build_rhr_tile(records: list[dict[str, Any]]) -> str:
     latest = next((v for v in reversed(values) if v is not None), None)
     value_text = f'{int(latest)}<span class="stat-unit">bpm</span>' if latest is not None else "brak danych"
 
-    chart = svg_line_chart(labels, values, "var(--c-rhr)", unit=" bpm", x_labels="dense")
+    chart = svg_line_chart(labels, values, "var(--c-rhr)", unit=" bpm")
     body = f'''
 <div class="stat-row">
   <div class="stat-big">{value_text}</div>
@@ -803,7 +803,7 @@ def build_weight_tile(weight_entries: list[dict[str, Any]]) -> str:
         values.append(e.get("kg"))
 
     chart = svg_line_chart(
-        labels, values, "var(--c-neutral)", unit=" kg", y_fmt="{:.1f}", x_labels="sparse"
+        labels, values, "var(--c-neutral)", unit=" kg", y_fmt="{:.1f}"
     )
 
     kg_text = f'{latest_kg:.1f}<span class="stat-unit">kg</span>' if latest_kg is not None else "brak danych"
@@ -832,24 +832,15 @@ def build_nutrition_trend_cards(
     protein_target = (targets or {}).get("protein")
     carbs_target = (targets or {}).get("carbs")
 
-    kcal_card = _card(
-        "Kalorie — ostatnie 14 dni",
-        '<div class="chart-wrap">'
-        + svg_bar_chart(labels, series("kcal"), "var(--c-neutral)", unit=" kcal", target=kcal_target)
-        + "</div>",
-    )
-    protein_card = _card(
-        "Białko — ostatnie 14 dni",
-        '<div class="chart-wrap">'
-        + svg_bar_chart(labels, series("protein"), "var(--c-neutral)", unit=" g", target=protein_target)
-        + "</div>",
-    )
-    carbs_card = _card(
-        "Węgle — ostatnie 14 dni",
-        '<div class="chart-wrap">'
-        + svg_bar_chart(labels, series("carbs"), "var(--c-neutral)", unit=" g", target=carbs_target)
-        + "</div>",
-    )
+    def bar_tile(title: str, values: list[float | None], unit: str, target: float | None) -> str:
+        if not any(v is not None for v in values):
+            return _card(title, '<div class="empty-fill"><p class="empty-msg">Brak danych.</p></div>')
+        chart = svg_bar_chart(labels, values, "var(--c-neutral)", unit=unit, target=target)
+        return _card(title, f'<div class="chart-wrap">{chart}</div>')
+
+    kcal_card = bar_tile("Kalorie — ostatnie 14 dni", series("kcal"), " kcal", kcal_target)
+    protein_card = bar_tile("Białko — ostatnie 14 dni", series("protein"), " g", protein_target)
+    carbs_card = bar_tile("Węgle — ostatnie 14 dni", series("carbs"), " g", carbs_target)
     return kcal_card + protein_card + carbs_card
 
 
@@ -928,7 +919,11 @@ main.layout {
   padding: 10px 20px 14px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  align-items: stretch;
+  /* Tiles keep their own natural content height and sit flush at the top
+     of their row instead of being stretched to match the tallest sibling
+     (Gotowość is the one tile that's naturally taller; the rest stay low
+     and compact). */
+  align-items: start;
   gap: 12px;
 }
 
@@ -945,8 +940,6 @@ main.layout {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px;
-  display: flex;
-  flex-direction: column;
 }
 
 .card h2 {
@@ -958,7 +951,7 @@ main.layout {
   letter-spacing: 0.02em;
 }
 
-.stat-row { margin-bottom: 6px; flex: none; }
+.stat-row { margin-bottom: 6px; }
 
 .stat-row-inline { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 
@@ -990,37 +983,34 @@ main.layout {
 
 .dim { color: var(--text-dim); }
 
-/* Charts grow to fill whatever extra height align-items:stretch gives the
-   card (e.g. when a taller sibling in the same row, like Gotowość, forces
-   the row taller), so there's no empty strip below a fixed-height chart. */
+/* A fixed-height slot for a chart (or its "no data" message), so tiles in
+   the same row line up predictably without relying on grid/flex stretching.
+   The chart's own actual size comes from its SVG width/height attributes,
+   not from this wrapper - this just centers a short "brak danych" message
+   when there's no chart to show. */
 .chart-wrap {
-  flex: 1;
-  min-height: 110px;
+  min-height: 100px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.chart { width: 100%; height: 100%; display: block; }
+.chart { display: block; width: 100%; }
 
-.grid-line { stroke: var(--grid-line); stroke-width: 1; }
+.grid-line { stroke: var(--grid-line); }
 
-.axis-label {
-  fill: var(--text-dim);
-  font-size: 10px;
-}
+.axis-label { fill: var(--text-dim); }
 
-.baseline-line { stroke-width: 1.2; stroke-dasharray: 3 3; opacity: 0.6; }
+.baseline-line { opacity: 0.6; }
 
-.phase-bar { width: 100%; height: auto; display: block; border-radius: 4px; overflow: hidden; flex: none; }
+.phase-bar { display: block; width: 100%; border-radius: 4px; overflow: hidden; }
 
 .legend {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 10px;
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: 11px;
-  flex: none;
 }
 
 .legend-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); }
@@ -1034,13 +1024,13 @@ main.layout {
 
 .legend-item b { color: var(--text); font-weight: 600; }
 
-.readiness-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 8px; flex: none; }
+.readiness-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 8px; }
 
-.ring-col { display: flex; flex-direction: column; align-items: center; flex: none; gap: 2px; }
+.ring-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 
-.ring { width: 122px; height: 122px; flex: none; }
+.ring { display: block; }
 
-.ring-score { font-size: 28px; font-weight: 700; fill: var(--text); }
+.ring-score { fill: var(--text); }
 
 .ring-level {
   font-size: 11px;
@@ -1053,7 +1043,7 @@ main.layout {
 
 .ring-col .dim { font-size: 11px; }
 
-.factor-bars { flex: 1; display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+.factor-bars { display: flex; flex-direction: column; gap: 5px; }
 
 .factor-row { display: grid; grid-template-columns: 104px 1fr 32px; align-items: center; gap: 8px; }
 
@@ -1075,12 +1065,11 @@ main.layout {
   color: var(--text-dim);
   margin: 6px 0 0;
   line-height: 1.3;
-  flex: none;
 }
 
-.target-line { stroke: var(--text-dim); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.target-line { stroke: var(--text-dim); }
 
-.nutrient-bars-wrap { flex: 1; display: flex; align-items: center; min-height: 40px; }
+.nutrient-bars-wrap { min-height: 40px; display: flex; align-items: center; }
 
 .nutrient-bars { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 
@@ -1101,15 +1090,13 @@ main.layout {
 
 .nutrient-value-wide { grid-column: 2 / span 2; text-align: left; }
 
-/* Shared by every "no data" state: centers a short compact hint within
-   whatever height align-items:stretch gave the card, instead of a tall
-   padded block. */
+/* Shared by every "no data" state: a short, fixed-height hint (tile stays
+   around 90px tall total) instead of a tall padded block. */
 .empty-fill {
-  flex: 1;
+  min-height: 46px;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
   text-align: center;
 }
 
