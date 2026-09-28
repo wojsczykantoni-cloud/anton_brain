@@ -258,11 +258,11 @@ def fmt_big_with_target(value: Any, target: Any, unit: str) -> str:
 # --------------------------------------------------------------------------
 
 CHART_W = 480
-CHART_H = 170
-PAD_L = 40
+CHART_H = 110
+PAD_L = 44
 PAD_R = 12
-PAD_T = 14
-PAD_B = 24
+PAD_T = 10
+PAD_B = 18
 
 
 def _scale_points(
@@ -314,7 +314,7 @@ def svg_line_chart(
 
     parts: list[str] = [
         f'<svg viewBox="0 0 {CHART_W} {CHART_H}" class="chart" role="img" '
-        f'aria-label="Wykres liniowy">'
+        f'preserveAspectRatio="none" aria-label="Wykres liniowy">'
     ]
 
     for frac in (0.0, 0.5, 1.0):
@@ -325,7 +325,7 @@ def svg_line_chart(
             f'class="grid-line" />'
         )
         parts.append(
-            f'<text x="{PAD_L - 6}" y="{gy + 3:.1f}" class="axis-label" text-anchor="end">'
+            f'<text x="{PAD_L - 8}" y="{gy + 3:.1f}" class="axis-label" text-anchor="end">'
             f'{y_fmt.format(gv)}{unit}</text>'
         )
 
@@ -338,14 +338,16 @@ def svg_line_chart(
             f'height="{abs(y_lo - y_hi):.1f}" class="baseline-band" />'
         )
 
+    # No stroke-linecap="round" here on purpose: a round cap draws a small
+    # protruding tail past the first/last vertex in the direction of travel,
+    # which reads as a stray line segment beyond the last real data point.
     segment: list[str] = []
     for x, y in points:
         if y is None:
             if len(segment) > 1:
                 parts.append(
                     f'<polyline points="{" ".join(segment)}" fill="none" '
-                    f'stroke="{color}" stroke-width="2.5" stroke-linejoin="round" '
-                    f'stroke-linecap="round" />'
+                    f'stroke="{color}" stroke-width="2.5" stroke-linejoin="round" />'
                 )
             segment = []
         else:
@@ -353,23 +355,22 @@ def svg_line_chart(
     if len(segment) > 1:
         parts.append(
             f'<polyline points="{" ".join(segment)}" fill="none" '
-            f'stroke="{color}" stroke-width="2.5" stroke-linejoin="round" '
-            f'stroke-linecap="round" />'
+            f'stroke="{color}" stroke-width="2.5" stroke-linejoin="round" />'
         )
 
     for x, y in points:
         if y is not None:
             parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}" />')
 
+    # Only first/middle/last day get an X-axis label, to keep it legible at
+    # tile width.
     n = len(labels)
-    step = max(1, round(n / 6))
-    for i, label in enumerate(labels):
-        if i % step != 0 and i != n - 1:
-            continue
+    label_indices = sorted({0, (n - 1) // 2, n - 1}) if n else []
+    for i in label_indices:
         x = points[i][0]
         parts.append(
-            f'<text x="{x:.1f}" y="{CHART_H - 6}" class="axis-label" text-anchor="middle">'
-            f"{esc(label)}</text>"
+            f'<text x="{x:.1f}" y="{CHART_H - 4}" class="axis-label" text-anchor="middle">'
+            f"{esc(labels[i])}</text>"
         )
 
     parts.append("</svg>")
@@ -400,7 +401,7 @@ def svg_bar_chart(
 
     parts = [
         f'<svg viewBox="0 0 {CHART_W} {CHART_H}" class="chart" role="img" '
-        f'aria-label="Wykres słupkowy">'
+        f'preserveAspectRatio="none" aria-label="Wykres słupkowy">'
     ]
 
     for frac in (0.0, 0.5, 1.0):
@@ -411,7 +412,7 @@ def svg_bar_chart(
             f'class="grid-line" />'
         )
         parts.append(
-            f'<text x="{PAD_L - 6}" y="{gy + 3:.1f}" class="axis-label" text-anchor="end">'
+            f'<text x="{PAD_L - 8}" y="{gy + 3:.1f}" class="axis-label" text-anchor="end">'
             f'{y_fmt.format(gv)}{unit}</text>'
         )
 
@@ -427,7 +428,7 @@ def svg_bar_chart(
             )
         if i % step == 0 or i == n - 1:
             parts.append(
-                f'<text x="{x + bar_w / 2:.1f}" y="{CHART_H - 6}" class="axis-label" '
+                f'<text x="{x + bar_w / 2:.1f}" y="{CHART_H - 4}" class="axis-label" '
                 f'text-anchor="middle">{esc(labels[i])}</text>'
             )
 
@@ -451,7 +452,7 @@ def svg_phase_bar(deep: Any, rem: Any, light: Any, awake: Any) -> str:
     ]
     total = sum(v for _, v, _ in segments if isinstance(v, (int, float)))
     width = 640
-    height = 28
+    height = 14
 
     if not total:
         return '<p class="empty-msg">Brak danych o fazach snu.</p>'
@@ -481,10 +482,14 @@ def svg_phase_bar(deep: Any, rem: Any, light: Any, awake: Any) -> str:
     return "".join(parts)
 
 
-def svg_ring(score: Any, color: str, size: int = 140, stroke: int = 14) -> str:
+def svg_ring(score: Any, color: str, diameter: int = 100, stroke: int = 10) -> str:
     if score is None:
         return '<p class="empty-msg">Brak danych.</p>'
-    r = (size - stroke) / 2
+    # viewBox is padded beyond the stroke's outer edge so the arc and the
+    # centered score text never get clipped by the SVG's own bounds.
+    margin = 6
+    size = diameter + margin * 2
+    r = (diameter - stroke) / 2
     cx = cy = size / 2
     circumference = 2 * 3.14159265 * r
     frac = max(0.0, min(1.0, score / 100))
@@ -494,7 +499,7 @@ def svg_ring(score: Any, color: str, size: int = 140, stroke: int = 14) -> str:
 <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="{stroke}"
   stroke-linecap="round" stroke-dasharray="{dash:.1f} {circumference:.1f}"
   transform="rotate(-90 {cx} {cy})" />
-<text x="{cx}" y="{cy + 1}" text-anchor="middle" dominant-baseline="middle" class="ring-score">{int(score)}</text>
+<text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central" class="ring-score">{int(score)}</text>
 </svg>'''
 
 
@@ -695,7 +700,10 @@ def build_food_yesterday_tile(
     y = date.today() - timedelta(days=1)
     rec = food_by_date.get(y.isoformat())
     if not rec:
-        return _card("Wczoraj: paliwo", '<p class="empty-msg">Brak wpisu za wczoraj.</p>')
+        return _card(
+            "Wczoraj: paliwo",
+            '<p class="empty-msg empty-compact">Brak wpisu. Wyślij /dzien do bota.</p>',
+        )
 
     kcal = rec.get("kcal")
     protein = rec.get("protein")
@@ -720,7 +728,9 @@ def build_food_yesterday_tile(
 
 def build_weight_tile(weight_entries: list[dict[str, Any]]) -> str:
     if not weight_entries:
-        return _card("Waga", '<p class="empty-msg">Brak wpisów wagi.</p>')
+        return _card(
+            "Waga", '<p class="empty-msg empty-compact">Brak wpisów. Wyślij /waga do bota.</p>'
+        )
 
     latest = weight_entries[-1]
     latest_kg = latest.get("kg")
@@ -846,7 +856,7 @@ body {
 }
 
 header {
-  padding: 28px 24px 8px;
+  padding: 18px 20px 6px;
   max-width: 1200px;
   margin: 0 auto;
 }
@@ -866,36 +876,32 @@ header .meta {
 main.layout {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 16px 24px 48px;
+  padding: 12px 20px 20px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-@media (max-width: 900px) {
-  main.layout { grid-template-columns: 1fr; }
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
 }
 
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 18px 20px 14px;
+  padding: 14px;
 }
 
 .card h2 {
-  margin: 0 0 10px;
-  font-size: 0.95rem;
+  margin: 0 0 8px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
 
-.stat-row { margin-bottom: 10px; }
+.stat-row { margin-bottom: 8px; }
 
 .stat-big {
-  font-size: 2.2rem;
+  font-size: 30px;
   font-weight: 650;
   line-height: 1.1;
 }
@@ -910,7 +916,7 @@ main.layout {
 
 .dim { color: var(--text-dim); }
 
-.chart { width: 100%; height: auto; display: block; }
+.chart { width: 100%; height: 110px; display: block; }
 
 .grid-line { stroke: var(--grid-line); stroke-width: 1; }
 
@@ -926,9 +932,9 @@ main.layout {
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
-  margin-top: 10px;
-  font-size: 0.8rem;
+  gap: 4px 10px;
+  margin-top: 6px;
+  font-size: 11px;
 }
 
 .legend-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); }
@@ -942,11 +948,11 @@ main.layout {
 
 .legend-item b { color: var(--text); font-weight: 600; }
 
-.ring-row { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }
+.ring-row { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
 
-.ring { width: 110px; height: 110px; flex: none; }
+.ring { width: 112px; height: 112px; flex: none; }
 
-.ring-score { font-size: 30px; font-weight: 700; fill: var(--text); }
+.ring-score { font-size: 26px; font-weight: 700; fill: var(--text); }
 
 .ring-label .dim { font-size: 0.8rem; margin-top: 2px; }
 
@@ -995,12 +1001,14 @@ main.layout {
 
 .nutrient-value-wide { grid-column: 2 / span 2; text-align: left; }
 
-.empty-msg { color: var(--text-dim); font-size: 0.9rem; padding: 20px 0; }
+.empty-msg { color: var(--text-dim); font-size: 0.85rem; padding: 10px 0; margin: 0; }
+
+.empty-compact { padding: 2px 0; }
 
 footer {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 24px 32px;
+  padding: 0 20px 16px;
   color: var(--text-dim);
   font-size: 0.78rem;
 }

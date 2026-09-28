@@ -11,14 +11,12 @@
             "id": "80015d6dead7334e",
             "type": "leaf",
             "state": {
-              "type": "markdown",
+              "type": "html-view",
               "state": {
-                "file": "daily/2026-09-23.md",
-                "mode": "source",
-                "source": false
+                "file": "Health/Health Dashboard.html"
               },
-              "icon": "lucide-file",
-              "title": "2026-09-23"
+              "icon": "code-glyph",
+              "title": "Health Dashboard"
             }
           }
         ]
@@ -191,9 +189,9 @@
   },
   "active": "80015d6dead7334e",
   "lastOpenFiles": [
+    "daily/2026-09-23.md",
     "o-mnie.md",
     "templates/daily.md",
-    "daily/2026-09-23.md",
     "logs/garmin-sync.log",
     "scripts/launchd/com.antonbrain.garminsync.plist",
     "scripts/garmin_daily.sh",
