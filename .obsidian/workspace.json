@@ -191,6 +191,7 @@
   },
   "active": "5e3933967c19d52c",
   "lastOpenFiles": [
+    "scripts/start-bot.command",
     "daily/2026-09-28.md",
     "daily/2026-09-27.md",
     "daily/2026-09-26.md.tmp",
@@ -226,7 +227,6 @@
     "node_modules/bl/README.md",
     "node_modules/bl/LICENSE.md",
     "node_modules/@cypress/request/README.md",
-    "node_modules/request/node_modules/jsprim/README.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
