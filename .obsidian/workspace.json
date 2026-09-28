@@ -191,6 +191,9 @@
   },
   "active": "5e3933967c19d52c",
   "lastOpenFiles": [
+    "scripts/__pycache__/garmin_login.cpython-313.pyc",
+    "scripts/__pycache__",
+    "scripts/garmin_login.py",
     "scripts/launchd/README.md",
     "scripts/launchd/com.antonbrain.telegrambot.plist",
     "scripts/launchd/com.antonbrain.morningbrief.plist",
@@ -209,8 +212,6 @@
     "logs/morning-brief.log",
     "logs/bot.log",
     "scripts/morning-brief.sh",
-    "scripts",
-    "logs",
     "node_modules/combined-stream/Readme.md",
     "node_modules/@cypress/request-promise/README.md",
     "node_modules/request/node_modules/form-data/README.md",
@@ -226,7 +227,6 @@
     "node_modules/request/node_modules/uuid/CHANGELOG.md",
     "node_modules/bl/README.md",
     "node_modules/bl/LICENSE.md",
-    "node_modules/@cypress/request/README.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
