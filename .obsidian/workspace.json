@@ -189,8 +189,12 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "80015d6dead7334e",
+  "active": "5e3933967c19d52c",
   "lastOpenFiles": [
+    "scripts/launchd/README.md",
+    "scripts/launchd/com.antonbrain.telegrambot.plist",
+    "scripts/launchd/com.antonbrain.morningbrief.plist",
+    "scripts/launchd",
     "daily/2026-09-24.md",
     "daily/2026-09-25.md",
     "daily/2026-09-26.md",
@@ -207,11 +211,8 @@
     "scripts/morning-brief.sh",
     "scripts",
     "logs",
-    "Antoni – README.pdf",
     "node_modules/combined-stream/Readme.md",
-    "package-lock.json",
     "node_modules/@cypress/request-promise/README.md",
-    "node_modules/@cypress/request-promise/package.json",
     "node_modules/request/node_modules/form-data/README.md",
     "node_modules/@cypress/request-promise/node_modules/tough-cookie/README.md",
     "node_modules/request/node_modules/qs/README.md",
