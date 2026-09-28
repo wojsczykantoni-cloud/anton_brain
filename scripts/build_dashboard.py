@@ -454,47 +454,56 @@ def svg_bar_chart(
 
 
 def svg_phase_bar(deep: Any, light: Any, rem: Any, awake: Any) -> str:
-    # Bar-fill widths and legend percentages are both derived from the same
-    # `segments` list and the same `total` below, so they are proportional
-    # by construction - keep it that way if this function is ever touched
-    # again (a mismatch here would mean one loop skipping a value the other
-    # includes, e.g. via a differing isinstance/None check).
     segments = [
         ("Głęboki", deep, "var(--c-deep)"),
         ("Lekki", light, "var(--c-light)"),
         ("REM", rem, "var(--c-rem)"),
         ("Wybudzenia", awake, "var(--c-awake)"),
     ]
-    total = sum(v for _, v, _ in segments if isinstance(v, (int, float)))
-    width = 640
-    height = 14
+    total = sum(v for _, v, _ in segments if isinstance(v, (int, float)) and v > 0)
 
     if not total:
         return '<p class="empty-msg">Brak danych o fazach snu.</p>'
 
-    parts = [
-        f'<svg viewBox="0 0 {width} {height}" class="phase-bar" role="img" '
-        f'aria-label="Fazy snu">'
-    ]
+    # Widths are percentages of a 0-100 viewBox, computed once here and
+    # reused for both the rects and the legend below, so a rendering bug
+    # can't make them diverge - they are, by construction, the same numbers.
+    widths: dict[str, float] = {}
+    for name, v, _ in segments:
+        widths[name] = (v / total * 100) if isinstance(v, (int, float)) and v > 0 else 0.0
+
+    total_width = sum(widths.values())
+    assert abs(total_width - 100) < 0.01, (
+        f"svg_phase_bar: segment widths sum to {total_width}, expected 100"
+    )
+    for name, v, _ in segments:
+        if isinstance(v, (int, float)) and v > 0:
+            assert widths[name] > 0, f"svg_phase_bar: {name} has a value but zero width"
+
+    # width/height are explicit attributes (not CSS) so the bar still scales
+    # correctly if the host strips stylesheet rules.
+    rects = []
     x = 0.0
-    for _, v, color in segments:
-        if not isinstance(v, (int, float)) or v <= 0:
-            continue
-        w = (v / total) * width
-        parts.append(f'<rect x="{x:.1f}" y="0" width="{w:.1f}" height="{height}" fill="{color}" />')
+    for name, v, color in segments:
+        w = widths[name]
+        if w > 0:
+            rects.append(f'<rect x="{x:.3f}" y="0" width="{w:.3f}" height="10" fill="{color}" />')
         x += w
-    parts.append("</svg>")
+    svg = (
+        '<svg width="100%" height="14" viewBox="0 0 100 10" preserveAspectRatio="none" '
+        'class="phase-bar" role="img" aria-label="Fazy snu">' + "".join(rects) + "</svg>"
+    )
 
     legend_items = []
     for name, v, color in segments:
-        pct = f"{(v / total * 100):.0f}%" if isinstance(v, (int, float)) and v else "0%"
+        pct = f"{widths[name]:.0f}%"
         legend_items.append(
             f'<span class="legend-item"><i style="background:{color}"></i>{esc(name)} '
             f'<b>{fmt_hms(v) if isinstance(v, (int, float)) else "brak danych"}</b> '
             f'<span class="dim">({pct})</span></span>'
         )
-    parts.append(f'<div class="legend">{"".join(legend_items)}</div>')
-    return "".join(parts)
+    legend = f'<div class="legend">{"".join(legend_items)}</div>'
+    return svg + legend
 
 
 def svg_ring(score: Any, color: str, diameter: int = 110, stroke: int = 10) -> str:
@@ -509,12 +518,17 @@ def svg_ring(score: Any, color: str, diameter: int = 110, stroke: int = 10) -> s
     circumference = 2 * 3.14159265 * r
     frac = max(0.0, min(1.0, score / 100))
     dash = circumference * frac
-    return f'''<svg viewBox="0 0 {size} {size}" class="ring" role="img" aria-label="Pierścień gotowości">
+    # width/height/viewBox as attributes (not CSS) so the ring keeps its
+    # size even if the host strips stylesheet rules. The score text uses
+    # text-anchor="middle" + dy=".35em" rather than dominant-baseline, which
+    # some SVG renderers (older/embedded engines) center inconsistently or
+    # not at all - dy-based centering is the more universally reliable trick.
+    return f'''<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" class="ring" role="img" aria-label="Pierścień gotowości">
 <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="var(--border)" stroke-width="{stroke}" />
 <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="{stroke}"
   stroke-linecap="round" stroke-dasharray="{dash:.1f} {circumference:.1f}"
   transform="rotate(-90 {cx} {cy})" />
-<text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central" class="ring-score">{int(score)}</text>
+<text x="{cx}" y="{cy}" text-anchor="middle" dy=".35em" font-size="30" font-weight="700" class="ring-score">{int(score)}</text>
 </svg>'''
 
 
