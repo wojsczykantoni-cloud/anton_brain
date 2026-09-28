@@ -108,6 +108,16 @@ const DATE_PATTERNS = [
     resolve: (m, y, mo, d) => new Date(Number(y), Number(mo) - 1, Number(d)),
   },
   {
+    // DD.MM.RRRR (np. "01.10.2026"). Musi poprzedzać wzorzec 'time' w tej
+    // tablicy: przy tym samym indeksie startowym rozstrzyganie nakładających
+    // się dopasowań w resolveEventDateTime zachowuje pierwsze w kolejności
+    // tablicy, a chcemy, żeby dłuższe dopasowanie daty ("01.10.2026") wygrało
+    // z krótszym, przypadkowym dopasowaniem wzorca godziny do "01.10".
+    kind: 'day',
+    re: new RegExp(`${NB}(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})${NA}`, 'gu'),
+    resolve: (m, d, mo, y) => new Date(Number(y), Number(mo) - 1, Number(d)),
+  },
+  {
     kind: 'time',
     re: new RegExp(`${NB}([01]?\\d|2[0-3])[:.]([0-5]\\d)${NA}`, 'gu'),
     resolve: (m, hh, mm) => ({ hour: Number(hh), minute: Number(mm) }),
@@ -179,8 +189,10 @@ function resolveEventDateTime(text, now = new Date()) {
     .trim();
 
   return {
-    title: title || 'Wydarzenie',
+    title,
     startIso: formatIcalDateTime(target),
+    startDate: target,
+    hasTime: Boolean(timeSpan),
     recognizedText: spans.map((s) => s.original).join(' '),
   };
 }
@@ -233,6 +245,23 @@ function formatLocalDateTime(isoUtc) {
   const d = new Date(isoUtc);
   const pad = (n) => String(n).padStart(2, '0');
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Porównania w lokalnej strefie czasowej (jak formatLocalDateTime) - używane
+// przez /usun do filtrowania wyników wyszukiwania po dacie/godzinie podanej
+// przez użytkownika, zamiast po surowym UTC ze start_date.
+function sameLocalDate(isoUtc, targetDate) {
+  const d = new Date(isoUtc);
+  return (
+    d.getFullYear() === targetDate.getFullYear() &&
+    d.getMonth() === targetDate.getMonth() &&
+    d.getDate() === targetDate.getDate()
+  );
+}
+
+function sameLocalTime(isoUtc, targetDate) {
+  const d = new Date(isoUtc);
+  return d.getHours() === targetDate.getHours() && d.getMinutes() === targetDate.getMinutes();
 }
 
 // Szuka wydarzeń pasujących do fragmentu tytułu - execFile z argumentami
@@ -515,31 +544,56 @@ bot.onText(/^\/event(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
     return;
   }
 
+  const title = parsed.title || 'Wydarzenie';
+
   try {
-    await icalAdd(parsed.title, parsed.startIso);
-    const event = await findCreatedEvent(parsed.title);
+    await icalAdd(title, parsed.startIso);
+    const event = await findCreatedEvent(title);
     const whenLabel = event ? formatLocalDateTime(event.start_date) : parsed.recognizedText;
-    await bot.sendMessage(msg.chat.id, `✅ Dodano wydarzenie „${parsed.title}” — ${whenLabel}.`);
+    await bot.sendMessage(msg.chat.id, `✅ Dodano wydarzenie „${title}” — ${whenLabel}.`);
   } catch (err) {
     console.error('Błąd przy tworzeniu wydarzenia:', err);
     await bot.sendMessage(msg.chat.id, `❌ Nie udało się utworzyć wydarzenia: ${err.message}`);
   }
 });
 
+const USUN_USAGE =
+  'Format: /usun <fragment tytułu> [data] [godzina], np. /usun kawa jutro 10:00 albo /usun New Event 01.10.2026 09:00.';
+
 bot.onText(/^\/usun(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   if (!isAuthorized(msg)) return;
 
-  const query = match[1] && match[1].trim();
-  if (!query) {
-    await bot.sendMessage(msg.chat.id, 'Podaj fragment tytułu, np. /usun spotkanie z promotorem.');
+  const raw = match[1] && match[1].trim();
+  if (!raw) {
+    await bot.sendMessage(msg.chat.id, USUN_USAGE);
+    return;
+  }
+
+  // Ten sam parser co /event: wyłuskuje datę/godzinę z tekstu (gdziekolwiek
+  // by nie była) i zwraca resztę jako fragment tytułu. Brak dopasowania
+  // (parsed === null) oznacza po prostu, że cały tekst to fragment tytułu -
+  // dokładnie jak w starym zachowaniu /usun.
+  const parsed = resolveEventDateTime(raw);
+  const titleQuery = (parsed ? parsed.title : raw).trim();
+  if (!titleQuery) {
+    await bot.sendMessage(msg.chat.id, USUN_USAGE);
     return;
   }
 
   try {
-    const events = await icalSearch(query);
+    let events = await icalSearch(titleQuery);
+
+    if (parsed) {
+      const target = parsed.startDate;
+      events = events.filter((e) => sameLocalDate(e.start_date, target));
+      if (parsed.hasTime) {
+        events = events.filter((e) => sameLocalTime(e.start_date, target));
+      }
+    }
 
     if (events.length === 0) {
-      await bot.sendMessage(msg.chat.id, `Nie znaleziono wydarzenia pasującego do „${query}”.`);
+      const suffix = parsed ? ' w podanym terminie' : '';
+      await bot.sendMessage(msg.chat.id, `Nie znaleziono wydarzenia pasującego do „${titleQuery}”${suffix}.`);
       return;
     }
 
@@ -547,13 +601,17 @@ bot.onText(/^\/usun(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
       const list = events
         .map((e) => `• ${e.title} — ${formatLocalDateTime(e.start_date)}`)
         .join('\n');
-      await bot.sendMessage(
-        msg.chat.id,
-        `Znaleziono ${events.length} pasujących wydarzeń, podaj dokładniejszy fragment tytułu:\n${list}`
-      );
+      const hint = parsed
+        ? 'podaj dokładniejszą datę/godzinę'
+        : 'podaj dokładniejszy fragment tytułu albo datę i godzinę';
+      await bot.sendMessage(msg.chat.id, `Znaleziono ${events.length} pasujących wydarzeń, ${hint}:\n${list}`);
       return;
     }
 
+    // Dokładnie jedno trafienie - jedyny przypadek, w którym w ogóle usuwamy.
+    // icalDeleteById nie przekazuje --span, więc ical stosuje domyślne
+    // --span this: dla wydarzenia cyklicznego kasuje tylko to wystąpienie,
+    // nigdy całą serię.
     const event = events[0];
     await icalDeleteById(event.id);
     await bot.sendMessage(
