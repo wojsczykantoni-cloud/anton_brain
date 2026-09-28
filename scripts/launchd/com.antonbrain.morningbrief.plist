@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.antonbrain.morningbrief</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/antoniwojsczyk/anton_brain/scripts/morning-brief.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/antoniwojsczyk/anton_brain</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/antoniwojsczyk/.nvm/versions/node/v24.15.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/antoniwojsczyk/anton_brain/logs/morning-brief.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/antoniwojsczyk/anton_brain/logs/morning-brief.log</string>
+</dict>
+</plist>
