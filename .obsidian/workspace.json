@@ -187,8 +187,11 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "c146fad7051fa081",
+  "active": "5e3933967c19d52c",
   "lastOpenFiles": [
+    "scripts/__pycache__/import_waga.cpython-313.pyc",
+    "data/weight.json",
+    "scripts/import_waga.py",
     "Health/Health Dashboard.html",
     "scripts/__pycache__/build_dashboard.cpython-313.pyc",
     "daily/2026-09-23.md",
@@ -200,9 +203,6 @@
     "scripts/build_dashboard.py",
     "Health",
     "data/garmin/2026-09-28.json",
-    "data/garmin/2026-09-27.json",
-    "data/garmin/2026-09-26.json",
-    "data/garmin/2026-09-25.json",
     "scripts/launchd/README.md",
     "daily/2026-09-24.md",
     "daily/2026-09-25.md",
