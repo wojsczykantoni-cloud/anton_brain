@@ -398,6 +398,10 @@ GRID_TOP_HEADROOM = 1.12
 BAR_LABEL_FONT_SIZE = 9
 BAR_LABEL_CHAR_W = 5.3
 BAR_LABEL_MIN_GAP = 4
+# Minimum vertical clearance a value label needs from the dashed target
+# line - below this, a bar whose value sits close to the target would
+# otherwise print its label right through the dashes.
+BAR_LABEL_TARGET_GAP = 8
 
 
 def nice_axis_top(values: list[float | None], target: float | None, step: float) -> float:
@@ -473,9 +477,9 @@ def svg_bar_chart(
                 value_label_idx.add(idx)
             idx -= step_k
 
-    # Drawn before the bars/labels so it never overlays a value label that
-    # happens to land near the target line - bars paint over it where they
-    # cross it, and value labels always render on top, last.
+    # Drawn before the bars/labels so a bar that crosses it paints over it
+    # cleanly; value labels are also kept clear of it below (BAR_LABEL_TARGET_GAP).
+    ty: float | None = None
     if target is not None and scale_max:
         ty = PAD_T + inner_h - (target / scale_max) * inner_h
         parts.append(
@@ -494,8 +498,11 @@ def svg_bar_chart(
                 f'rx="2" fill="{color}" />'
             )
             if i in value_label_idx:
+                label_y = y - 4
+                if ty is not None and abs(label_y - ty) < BAR_LABEL_TARGET_GAP:
+                    label_y = ty - BAR_LABEL_TARGET_GAP
                 parts.append(
-                    f'<text x="{x + bar_w / 2:.1f}" y="{y - 4:.1f}" font-size="{BAR_LABEL_FONT_SIZE}" '
+                    f'<text x="{x + bar_w / 2:.1f}" y="{label_y:.1f}" font-size="{BAR_LABEL_FONT_SIZE}" '
                     f'class="axis-label" text-anchor="middle">{v:.0f}</text>'
                 )
         if i in label_idx_set:
