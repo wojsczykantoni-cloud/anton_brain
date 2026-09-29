@@ -189,6 +189,7 @@
   },
   "active": "5e3933967c19d52c",
   "lastOpenFiles": [
+    "data/garmin/2026-09-29.json",
     "scripts/__pycache__/import_waga.cpython-313.pyc",
     "data/weight.json",
     "scripts/import_waga.py",
@@ -202,7 +203,6 @@
     "scripts/garmin_daily.sh",
     "scripts/build_dashboard.py",
     "Health",
-    "data/garmin/2026-09-28.json",
     "scripts/launchd/README.md",
     "daily/2026-09-24.md",
     "daily/2026-09-25.md",
