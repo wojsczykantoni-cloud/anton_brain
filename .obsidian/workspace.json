@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "270885ac18f6add1",
+        "id": "dcd3b45f398b47f8",
         "type": "tabs",
         "children": [
           {
-            "id": "c146fad7051fa081",
+            "id": "34d71267be171442",
             "type": "leaf",
             "state": {
               "type": "html-view",
@@ -187,22 +187,22 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "5e3933967c19d52c",
+  "active": "34d71267be171442",
   "lastOpenFiles": [
+    "daily/2026-09-29.md",
+    "daily/2026-09-23.md",
+    "Health/Health Dashboard.html",
     "data/garmin/2026-09-29.json",
     "scripts/__pycache__/import_waga.cpython-313.pyc",
     "data/weight.json",
     "scripts/import_waga.py",
-    "Health/Health Dashboard.html",
     "scripts/__pycache__/build_dashboard.cpython-313.pyc",
-    "daily/2026-09-23.md",
     "o-mnie.md",
     "templates/daily.md",
     "logs/garmin-sync.log",
     "scripts/launchd/com.antonbrain.garminsync.plist",
     "scripts/garmin_daily.sh",
     "scripts/build_dashboard.py",
-    "Health",
     "scripts/launchd/README.md",
     "daily/2026-09-24.md",
     "daily/2026-09-25.md",
@@ -224,7 +224,6 @@
     "node_modules/request/node_modules/uuid/README.md",
     "node_modules/request/node_modules/uuid/LICENSE.md",
     "node_modules/request/node_modules/uuid/CHANGELOG.md",
-    "node_modules/bl/README.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
