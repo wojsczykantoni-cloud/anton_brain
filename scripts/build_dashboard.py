@@ -26,6 +26,7 @@ tiles - no good/bad judgment, just numbers.
 from __future__ import annotations
 
 import json
+import math
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -386,6 +387,34 @@ def svg_line_chart(
     return "".join(parts)
 
 
+# Extra scale headroom above the top gridline value (a round number, computed
+# by nice_axis_top), so the tallest possible bar - and its value label -
+# never touch the very top of the chart canvas.
+GRID_TOP_HEADROOM = 1.12
+
+# Value-label sizing, in the 320-unit chart viewBox (renders close to the
+# ~10px the labels are meant to look like once scaled to the tile's actual
+# width). Used only to decide whether adjacent labels would overlap.
+BAR_LABEL_FONT_SIZE = 9
+BAR_LABEL_CHAR_W = 5.3
+BAR_LABEL_MIN_GAP = 4
+
+
+def nice_axis_top(values: list[float | None], target: float | None, step: float) -> float:
+    """Smallest multiple of 2*step at or above the larger of the data max and
+    the target, so the axis top - and its midpoint - are both round numbers
+    instead of whatever the data happened to max out at."""
+    candidates = [v for v in values if v is not None]
+    raw = max(candidates) if candidates else 0.0
+    if target:
+        raw = max(raw, float(target))
+    unit = step * 2
+    if raw <= 0:
+        return unit
+    top = math.ceil(raw / unit) * unit
+    return top if top > 0 else unit
+
+
 def svg_bar_chart(
     labels: list[str],
     values: list[float | None],
@@ -393,15 +422,16 @@ def svg_bar_chart(
     unit: str = "",
     y_fmt: str = "{:.0f}",
     target: float | None = None,
+    y_top: float | None = None,
 ) -> str:
-    non_null = [v for v in values if v is not None]
-    if not non_null:
+    non_null_idx = [i for i, v in enumerate(values) if v is not None]
+    if not non_null_idx:
         return '<p class="empty-msg">Brak danych do wykresu.</p>'
 
-    all_vals = list(non_null)
-    if target is not None:
-        all_vals.append(target)
-    y_max = max(all_vals) * 1.15 or 1.0
+    non_null = [values[i] for i in non_null_idx]
+    all_vals = list(non_null) + ([target] if target is not None else [])
+    top = y_top if y_top is not None else (max(all_vals) * 1.15 or 1.0)
+    scale_max = top * GRID_TOP_HEADROOM if y_top is not None else top
     n = len(values)
     inner_w = CHART_W - PAD_L - PAD_R
     inner_h = CHART_H - PAD_T - PAD_B
@@ -415,8 +445,8 @@ def svg_bar_chart(
     ]
 
     for frac in (0.0, 0.5, 1.0):
-        gy = PAD_T + inner_h * (1 - frac)
-        gv = y_max * frac
+        gv = top * frac
+        gy = PAD_T + inner_h * (1 - gv / scale_max)
         parts.append(
             f'<line x1="{PAD_L}" y1="{gy:.1f}" x2="{CHART_W - PAD_R}" y2="{gy:.1f}" '
             f'stroke-width="1" class="grid-line" />'
@@ -426,24 +456,46 @@ def svg_bar_chart(
             f'{y_fmt.format(gv)}{unit}</text>'
         )
 
+    # Value labels: one per bar when the tile is wide enough for every label
+    # to fit without touching its neighbor; otherwise only the most recent
+    # day with data, stepping back every 2nd/3rd day (however many slots a
+    # label actually needs) so they stay legible instead of overlapping.
+    max_text_len = max(len(f"{v:.0f}") for v in non_null)
+    label_w_est = max_text_len * BAR_LABEL_CHAR_W + BAR_LABEL_MIN_GAP
+    if slot_w >= label_w_est:
+        value_label_idx = set(non_null_idx)
+    else:
+        step_k = max(1, math.ceil(label_w_est / slot_w))
+        value_label_idx = set()
+        idx = non_null_idx[-1]
+        while idx >= 0:
+            if values[idx] is not None:
+                value_label_idx.add(idx)
+            idx -= step_k
+
     label_idx_set = set(_label_indices(n))
     for i, v in enumerate(values):
         x = PAD_L + slot_w * i + (slot_w - bar_w) / 2
         if v is not None:
-            bar_h = (v / y_max) * inner_h if y_max else 0
+            bar_h = (v / scale_max) * inner_h if scale_max else 0
             y = PAD_T + inner_h - bar_h
             parts.append(
                 f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" '
                 f'rx="2" fill="{color}" />'
             )
+            if i in value_label_idx:
+                parts.append(
+                    f'<text x="{x + bar_w / 2:.1f}" y="{y - 4:.1f}" font-size="{BAR_LABEL_FONT_SIZE}" '
+                    f'class="axis-label" text-anchor="middle">{v:.0f}</text>'
+                )
         if i in label_idx_set:
             parts.append(
                 f'<text x="{x + bar_w / 2:.1f}" y="{CHART_H - 4}" font-size="9" class="axis-label" '
                 f'text-anchor="middle">{esc(labels[i])}</text>'
             )
 
-    if target is not None and y_max:
-        ty = PAD_T + inner_h - (target / y_max) * inner_h
+    if target is not None and scale_max:
+        ty = PAD_T + inner_h - (target / scale_max) * inner_h
         parts.append(
             f'<line x1="{PAD_L}" y1="{ty:.1f}" x2="{CHART_W - PAD_R}" y2="{ty:.1f}" '
             f'stroke-width="1.5" stroke-dasharray="4 3" class="target-line" />'
@@ -832,15 +884,18 @@ def build_nutrition_trend_cards(
     protein_target = (targets or {}).get("protein")
     carbs_target = (targets or {}).get("carbs")
 
-    def bar_tile(title: str, values: list[float | None], unit: str, target: float | None) -> str:
+    def bar_tile(
+        title: str, values: list[float | None], unit: str, target: float | None, step: float
+    ) -> str:
         if not any(v is not None for v in values):
             return _card(title, '<div class="empty-fill"><p class="empty-msg">Brak danych.</p></div>')
-        chart = svg_bar_chart(labels, values, "var(--c-neutral)", unit=unit, target=target)
+        top = nice_axis_top(values, target, step)
+        chart = svg_bar_chart(labels, values, "var(--c-neutral)", unit=unit, target=target, y_top=top)
         return _card(title, f'<div class="chart-wrap">{chart}</div>')
 
-    kcal_card = bar_tile("Kalorie — ostatnie 14 dni", series("kcal"), " kcal", kcal_target)
-    protein_card = bar_tile("Białko — ostatnie 14 dni", series("protein"), " g", protein_target)
-    carbs_card = bar_tile("Węgle — ostatnie 14 dni", series("carbs"), " g", carbs_target)
+    kcal_card = bar_tile("Kalorie — ostatnie 14 dni", series("kcal"), " kcal", kcal_target, step=500)
+    protein_card = bar_tile("Białko — ostatnie 14 dni", series("protein"), " g", protein_target, step=50)
+    carbs_card = bar_tile("Węgle — ostatnie 14 dni", series("carbs"), " g", carbs_target, step=50)
     return kcal_card + protein_card + carbs_card
 
 
