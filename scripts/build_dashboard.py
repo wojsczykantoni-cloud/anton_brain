@@ -245,22 +245,16 @@ def pl_word(value_pl_map: dict[str, str], raw: Any) -> str:
     return value_pl_map.get(raw, str(raw).replace("_", " ").title())
 
 
-def fmt_big_with_target(value: Any, target: Any, unit: str) -> str:
-    if value is None:
-        return "brak danych"
-    text = f"{value:.0f}"
-    if target:
-        text += f" / {target:.0f}"
-    return f"{text} {unit}"
-
-
 # --------------------------------------------------------------------------
 # SVG chart builders
 # --------------------------------------------------------------------------
 
 CHART_W = 320
 CHART_H = 100
-PAD_L = 46
+# PAD_L gives the widest expected Y-axis label ("5000 kcal") enough room to
+# the left of the chart's inner area without its text (anchored at
+# PAD_L - 8, growing leftward) crossing x=0 and getting clipped.
+PAD_L = 50
 PAD_R = 14
 PAD_T = 10
 PAD_B = 18
@@ -500,7 +494,18 @@ def svg_bar_chart(
             if i in value_label_idx:
                 label_y = y - 4
                 if ty is not None and abs(label_y - ty) < BAR_LABEL_TARGET_GAP:
-                    label_y = ty - BAR_LABEL_TARGET_GAP
+                    # Push the label away from the dashed target line rather than
+                    # letting it sit on top of it: above the line for a bar that
+                    # reaches/exceeds the target, below it otherwise - but only if
+                    # there's room between the line and the bar's own top edge,
+                    # since a very close call has nowhere to go but back above.
+                    below_y = ty + BAR_LABEL_TARGET_GAP + BAR_LABEL_FONT_SIZE * 0.75
+                    if v >= target:
+                        label_y = ty - BAR_LABEL_TARGET_GAP
+                    elif below_y <= y - 2:
+                        label_y = below_y
+                    else:
+                        label_y = ty - BAR_LABEL_TARGET_GAP
                 parts.append(
                     f'<text x="{x + bar_w / 2:.1f}" y="{label_y:.1f}" font-size="{BAR_LABEL_FONT_SIZE}" '
                     f'class="axis-label" text-anchor="middle">{v:.0f}</text>'
@@ -814,14 +819,16 @@ def build_food_yesterday_tile(
     protein_target = (targets or {}).get("protein")
     carbs_target = (targets or {}).get("carbs")
 
-    kcal_big = fmt_big_with_target(kcal, kcal_target, "kcal")
+    kcal_text = f'{kcal:.0f}<span class="stat-unit">kcal</span>' if kcal is not None else "brak danych"
+    kcal_sub = f"Cel: {kcal_target:.0f} kcal" if kcal_target else "&nbsp;"
     bars = nutrient_bar_html("Białko", protein, protein_target) + nutrient_bar_html(
         "Węgle", carbs, carbs_target
     )
 
     body = f'''
 <div class="stat-row">
-  <div class="stat-big">{esc(kcal_big)}</div>
+  <div class="stat-big">{kcal_text}</div>
+  <div class="stat-sub">{kcal_sub}</div>
 </div>
 <div class="nutrient-bars-wrap"><div class="nutrient-bars">{bars}</div></div>
 '''
@@ -870,11 +877,12 @@ def build_weight_tile(weight_entries: list[dict[str, Any]]) -> str:
 
     kg_text = f'{latest_kg:.1f}<span class="stat-unit">kg</span>' if latest_kg is not None else "brak danych"
     title_date = fmt_short_date(date.fromisoformat(latest_date_str)) if latest_date_str else ""
+    change_sub = esc(change_text) if change_text else "Brak danych sprzed 7 dni"
 
     body = f'''
-<div class="stat-row stat-row-inline">
+<div class="stat-row">
   <div class="stat-big">{kg_text}</div>
-  <div class="stat-change">{esc(change_text) if change_text else "brak danych sprzed 7 dni"}</div>
+  <div class="stat-sub">{change_sub}</div>
 </div>
 <div class="chart-wrap">{chart}</div>
 '''
@@ -936,6 +944,8 @@ CSS = """
   --c-hrv: #5b9dd9;
   --c-rhr: #e5735a;
   --c-neutral: #7c8ba1;
+
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
 @media (prefers-color-scheme: light) {
@@ -947,6 +957,8 @@ CSS = """
     --border: #e2e5ea;
     --grid-line: #edeff3;
     --track: #edeff3;
+
+    --shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
   }
 }
 
@@ -981,7 +993,7 @@ header .meta {
 main.layout {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 10px 20px 14px;
+  padding: 8px 20px 24px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   /* Tiles keep their own natural content height and sit flush at the top
@@ -1003,8 +1015,9 @@ main.layout {
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--shadow);
 }
 
 .card h2 {
@@ -1016,9 +1029,7 @@ main.layout {
   letter-spacing: 0.02em;
 }
 
-.stat-row { margin-bottom: 6px; }
-
-.stat-row-inline { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.stat-row { margin-bottom: 8px; }
 
 .stat-big {
   font-size: 30px;
@@ -1030,18 +1041,13 @@ main.layout {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-dim);
-  margin-left: 3px;
-}
-
-.stat-change {
-  font-size: 13px;
-  color: var(--text-dim);
+  margin-left: 4px;
 }
 
 .stat-sub, .tile-sub {
   color: var(--text-dim);
   font-size: 13px;
-  margin: 2px 0 6px;
+  margin: 4px 0 0;
 }
 
 .stat-sub b, .tile-sub b { color: var(--text); font-weight: 600; }
@@ -1058,9 +1064,10 @@ main.layout {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
-.chart { display: block; width: 100%; }
+.chart { display: block; width: 100%; overflow: hidden; }
 
 .grid-line { stroke: var(--grid-line); }
 
@@ -1073,8 +1080,8 @@ main.layout {
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
-  margin-top: 4px;
+  gap: 4px 12px;
+  margin-top: 8px;
   font-size: 11px;
 }
 
@@ -1108,7 +1115,7 @@ main.layout {
 
 .ring-col .dim { font-size: 11px; }
 
-.factor-bars { display: flex; flex-direction: column; gap: 5px; }
+.factor-bars { display: flex; flex-direction: column; gap: 8px; }
 
 .factor-row { display: grid; grid-template-columns: 104px 1fr 32px; align-items: center; gap: 8px; }
 
@@ -1128,7 +1135,7 @@ main.layout {
 .tile-desc {
   font-size: 12px;
   color: var(--text-dim);
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   line-height: 1.3;
 }
 
@@ -1166,14 +1173,6 @@ main.layout {
 }
 
 .empty-msg { color: var(--text-dim); font-size: 0.85rem; margin: 0; }
-
-footer {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px 16px;
-  color: var(--text-dim);
-  font-size: 0.78rem;
-}
 """
 
 
@@ -1221,7 +1220,6 @@ def build_html(
 <main class="layout">
 {layout}
 </main>
-<footer>Dane z Garmin Connect, zapisane lokalnie w data/garmin. Wygenerowano przez scripts/build_dashboard.py.</footer>
 </body>
 </html>
 """
