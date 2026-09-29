@@ -9,6 +9,7 @@ przez macOS wykonywane stąd.
 ```
 ~/Library/LaunchAgents/com.antonbrain.telegrambot.plist
 ~/Library/LaunchAgents/com.antonbrain.morningbrief.plist
+~/Library/LaunchAgents/com.antonbrain.botwatchdog.plist
 ```
 
 ## Instalacja / aktualizacja
@@ -18,9 +19,11 @@ Skopiuj plik z repo do `~/Library/LaunchAgents/`, a potem załaduj go w launchd:
 ```bash
 cp scripts/launchd/com.antonbrain.telegrambot.plist ~/Library/LaunchAgents/
 cp scripts/launchd/com.antonbrain.morningbrief.plist ~/Library/LaunchAgents/
+cp scripts/launchd/com.antonbrain.botwatchdog.plist ~/Library/LaunchAgents/
 
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.antonbrain.telegrambot.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.antonbrain.morningbrief.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.antonbrain.botwatchdog.plist
 ```
 
 ## Przeładowanie po zmianie pliku
@@ -45,3 +48,9 @@ crashu, tylko przy kolejnym logowaniu przez `RunAtLoad`).
 
 `com.antonbrain.morningbrief` uruchamia się codziennie o 7:00
 (`StartCalendarInterval`) przez `scripts/morning-brief.sh`.
+
+`com.antonbrain.botwatchdog` uruchamia się co 3 minuty (`StartInterval: 180`)
+przez `scripts/bot_watchdog.sh` — sprawdza, czy proces `node bot.js` działa,
+a jeśli nie, robi `bootout` + `bootstrap` na `com.antonbrain.telegrambot`, żeby
+go wskrzesić. Interwencje loguje do `logs/watchdog.log`; gdy bot działa,
+skrypt nic nie robi i nic nie loguje.
