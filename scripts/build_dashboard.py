@@ -494,18 +494,13 @@ def svg_bar_chart(
             if i in value_label_idx:
                 label_y = y - 4
                 if ty is not None and abs(label_y - ty) < BAR_LABEL_TARGET_GAP:
-                    # Push the label away from the dashed target line rather than
-                    # letting it sit on top of it: above the line for a bar that
-                    # reaches/exceeds the target, below it otherwise - but only if
-                    # there's room between the line and the bar's own top edge,
-                    # since a very close call has nowhere to go but back above.
-                    below_y = ty + BAR_LABEL_TARGET_GAP + BAR_LABEL_FONT_SIZE * 0.75
-                    if v >= target:
-                        label_y = ty - BAR_LABEL_TARGET_GAP
-                    elif below_y <= y - 2:
-                        label_y = below_y
-                    else:
-                        label_y = ty - BAR_LABEL_TARGET_GAP
+                    # Always resolve the collision by moving above the line, never
+                    # below it: at this chart scale the gap between the target line
+                    # and a bar close enough to collide is only ever a few px - not
+                    # enough to fit a label between them without it touching one
+                    # side or the other. Above is always safe: GRID_TOP_HEADROOM
+                    # guarantees room between the line and the chart's top edge.
+                    label_y = ty - BAR_LABEL_TARGET_GAP
                 parts.append(
                     f'<text x="{x + bar_w / 2:.1f}" y="{label_y:.1f}" font-size="{BAR_LABEL_FONT_SIZE}" '
                     f'class="axis-label" text-anchor="middle">{v:.0f}</text>'
