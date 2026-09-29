@@ -473,6 +473,16 @@ def svg_bar_chart(
                 value_label_idx.add(idx)
             idx -= step_k
 
+    # Drawn before the bars/labels so it never overlays a value label that
+    # happens to land near the target line - bars paint over it where they
+    # cross it, and value labels always render on top, last.
+    if target is not None and scale_max:
+        ty = PAD_T + inner_h - (target / scale_max) * inner_h
+        parts.append(
+            f'<line x1="{PAD_L}" y1="{ty:.1f}" x2="{CHART_W - PAD_R}" y2="{ty:.1f}" '
+            f'stroke-width="1.5" stroke-dasharray="4 3" class="target-line" />'
+        )
+
     label_idx_set = set(_label_indices(n))
     for i, v in enumerate(values):
         x = PAD_L + slot_w * i + (slot_w - bar_w) / 2
@@ -493,13 +503,6 @@ def svg_bar_chart(
                 f'<text x="{x + bar_w / 2:.1f}" y="{CHART_H - 4}" font-size="9" class="axis-label" '
                 f'text-anchor="middle">{esc(labels[i])}</text>'
             )
-
-    if target is not None and scale_max:
-        ty = PAD_T + inner_h - (target / scale_max) * inner_h
-        parts.append(
-            f'<line x1="{PAD_L}" y1="{ty:.1f}" x2="{CHART_W - PAD_R}" y2="{ty:.1f}" '
-            f'stroke-width="1.5" stroke-dasharray="4 3" class="target-line" />'
-        )
 
     parts.append("</svg>")
     return "".join(parts)
