@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "c815b5b8579242de",
+        "id": "ee9469d40a2a7ea2",
         "type": "tabs",
         "children": [
           {
-            "id": "396772400236d3d4",
+            "id": "874254ed8cf6b98d",
             "type": "leaf",
             "state": {
               "type": "html-view",
@@ -187,10 +187,11 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "5e3933967c19d52c",
+  "active": "874254ed8cf6b98d",
   "lastOpenFiles": [
-    "daily/2026-09-30.md",
+    "daily/2026-09-26.md",
     "Health/Health Dashboard.html",
+    "daily/2026-09-30.md",
     "data/food/2026-09-30.json",
     "data/garmin/2026-09-30.json",
     "daily/2026-09-29.md",
@@ -207,7 +208,6 @@
     "templates/daily.md",
     "scripts/launchd/README.md",
     "daily/2026-09-24.md",
-    "daily/2026-09-26.md",
     "daily/2026-09-27.md",
     "daily/2026-09-28.md",
     "anton musk.md",
