@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "3fe04e337360bde8",
+        "id": "62fd4a7e78cd2b86",
         "type": "tabs",
         "children": [
           {
-            "id": "dd5d655e3c502d58",
+            "id": "bb64fd0274460c0e",
             "type": "leaf",
             "state": {
               "type": "html-view",
@@ -81,7 +81,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 205.609375
   },
   "right": {
     "id": "8b98e0bb53cccffa",
@@ -187,8 +187,9 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "dd5d655e3c502d58",
+  "active": "bb64fd0274460c0e",
   "lastOpenFiles": [
+    "daily/2026-09-30.md",
     "Health/Health Dashboard.html",
     "daily/2026-09-29.md",
     "logs/watchdog-error.log",
