@@ -189,6 +189,7 @@
   },
   "active": "bb64fd0274460c0e",
   "lastOpenFiles": [
+    "data/garmin/2026-09-30.json",
     "daily/2026-09-30.md",
     "Health/Health Dashboard.html",
     "daily/2026-09-29.md",
@@ -224,7 +225,6 @@
     "node_modules/request/node_modules/http-signature/README.md",
     "node_modules/request/node_modules/uuid/README.md",
     "node_modules/request/node_modules/uuid/LICENSE.md",
-    "node_modules/request/node_modules/uuid/CHANGELOG.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
