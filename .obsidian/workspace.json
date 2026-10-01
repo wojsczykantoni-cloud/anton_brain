@@ -189,6 +189,8 @@
   },
   "active": "874254ed8cf6b98d",
   "lastOpenFiles": [
+    "daily/2026-10-01.md.tmp",
+    "daily/2026-10-01.md",
     "daily/2026-09-26.md",
     "Health/Health Dashboard.html",
     "daily/2026-09-30.md",
@@ -223,7 +225,6 @@
     "node_modules/request/node_modules/http-signature/CHANGES.md",
     "node_modules/request/node_modules/http-signature/README.md",
     "node_modules/request/node_modules/uuid/README.md",
-    "node_modules/request/node_modules/uuid/LICENSE.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
