@@ -189,6 +189,7 @@
   },
   "active": "75ad56f4470f62e8",
   "lastOpenFiles": [
+    "data/food/2026-10-01.json",
     "Health/Health Dashboard.html",
     "data/garmin/2026-10-01.json",
     "daily/2026-10-01.md.tmp",
@@ -204,7 +205,6 @@
     "scripts/bot_watchdog.sh",
     "daily/2026-09-25.md",
     "data/food/2026-09-29.json",
-    "data/food",
     "daily/2026-09-23.md",
     "o-mnie.md",
     "templates/daily.md",
