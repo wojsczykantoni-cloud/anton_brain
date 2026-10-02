@@ -14,6 +14,12 @@ day, overwriting any existing entry for that day). If waga.txt doesn't
 exist yet (the Shortcut hasn't run), this is not an error - the script
 just says so and exits cleanly. On a successful write, rebuilds the
 dashboard.
+
+The file read is retried with growing backoff on OSError (e.g. "Resource
+deadlock avoided"), since iCloud can briefly hold waga.txt locked right
+after the Shortcut writes it - a single failed read isn't fatal. Retry
+recoveries are printed to stdout, which lands in logs/garmin-sync.log when
+this runs under garmin_daily.sh via launchd.
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
@@ -29,6 +36,8 @@ WAGA_TXT_PATH = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudD
 WEIGHT_PATH = REPO_ROOT / "data" / "weight.json"
 PYTHON_BIN = REPO_ROOT / ".venv" / "bin" / "python"
 BUILD_DASHBOARD_SCRIPT = REPO_ROOT / "scripts" / "build_dashboard.py"
+
+RETRY_DELAYS_SECONDS = [2, 4, 8, 16, 32]
 
 MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -44,6 +53,28 @@ def parse_waga_date(raw: str) -> date:
     day_str, month_str, year_str, _at, _time = raw.split()
     month = MONTHS[month_str[:3].lower()]
     return date(int(year_str), month, int(day_str))
+
+
+def read_waga_text() -> str:
+    """Reads waga.txt, retrying on OSError with growing backoff (2s, 4s, 8s,
+    16s, 32s - 5 retries, 6 attempts total) before giving up. Raises the
+    last OSError if every attempt fails."""
+    last_err: OSError | None = None
+    for attempt, delay in enumerate([0, *RETRY_DELAYS_SECONDS]):
+        if delay:
+            time.sleep(delay)
+        try:
+            text = WAGA_TXT_PATH.read_text(encoding="utf-8")
+        except OSError as err:
+            last_err = err
+            continue
+        if attempt > 0:
+            print(
+                f"Odczyt waga.txt powiódł się po {attempt} nieudanej/ych "
+                f"próbie/ach (ostatni błąd: {last_err})."
+            )
+        return text
+    raise last_err
 
 
 def load_weight_entries() -> list[dict]:
@@ -69,8 +100,15 @@ def main() -> None:
         return
 
     try:
-        payload = json.loads(WAGA_TXT_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as err:
+        raw_text = read_waga_text()
+    except OSError as err:
+        tries = len(RETRY_DELAYS_SECONDS) + 1
+        print(f"Nie udało się odczytać waga.txt po {tries} próbach: {err}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError as err:
         print(f"Nie udało się odczytać waga.txt: {err}", file=sys.stderr)
         sys.exit(1)
 
