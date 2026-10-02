@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "f7c8cb275c7b98f8",
+        "id": "8b401571ef9a6c32",
         "type": "tabs",
         "children": [
           {
-            "id": "63670322226cc0f9",
+            "id": "d8451d2f3df128ba",
             "type": "leaf",
             "state": {
               "type": "html-view",
@@ -187,10 +187,10 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "63670322226cc0f9",
+  "active": "d8451d2f3df128ba",
   "lastOpenFiles": [
-    "data/food/2026-10-02.json",
     "Health/Health Dashboard.html",
+    "data/food/2026-10-02.json",
     "daily/2026-10-02.md.tmp",
     "daily/2026-10-02.md",
     "data/food/2026-10-01.json",
