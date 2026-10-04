@@ -191,6 +191,7 @@
   },
   "active": "db5aaa8bc709dd8a",
   "lastOpenFiles": [
+    "data/garmin/2026-10-04.json",
     "daily/2026-10-04.md",
     "data/food/2026-10-03.json",
     "data/garmin/2026-10-03.json",
@@ -226,7 +227,6 @@
     "node_modules/request/node_modules/qs/LICENSE.md",
     "node_modules/request/node_modules/qs/CHANGELOG.md",
     "node_modules/request/node_modules/http-signature/http_signing.md",
-    "node_modules/request/node_modules/http-signature/CHANGES.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
