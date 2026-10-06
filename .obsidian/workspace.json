@@ -191,6 +191,8 @@
   },
   "active": "db5aaa8bc709dd8a",
   "lastOpenFiles": [
+    "daily/2026-10-06.md.tmp",
+    "daily/2026-10-06.md",
     "data/garmin/2026-10-05.json",
     "daily/2026-10-05.md",
     "data/food/2026-10-04.json",
@@ -204,7 +206,6 @@
     "11",
     "0",
     "data/food/2026-10-02.json",
-    "daily/2026-10-02.md.tmp",
     "daily/2026-10-02.md",
     "daily/2026-10-01.md",
     "daily/2026-09-26.md",
@@ -226,7 +227,6 @@
     "node_modules/@cypress/request-promise/node_modules/tough-cookie/README.md",
     "node_modules/request/node_modules/qs/README.md",
     "node_modules/request/node_modules/qs/LICENSE.md",
-    "node_modules/request/node_modules/qs/CHANGELOG.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
