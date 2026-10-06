@@ -4,21 +4,19 @@
     "type": "split",
     "children": [
       {
-        "id": "ad64ad04daeca922",
+        "id": "0bdcf03cda703f3e",
         "type": "tabs",
         "children": [
           {
-            "id": "db5aaa8bc709dd8a",
+            "id": "f4f6eaaf8a558394",
             "type": "leaf",
             "state": {
-              "type": "markdown",
+              "type": "html-view",
               "state": {
-                "file": "daily/2026-09-23.md",
-                "mode": "source",
-                "source": false
+                "file": "Health/Health Dashboard.html"
               },
-              "icon": "lucide-file",
-              "title": "2026-09-23"
+              "icon": "code-glyph",
+              "title": "Health Dashboard"
             }
           }
         ]
@@ -189,8 +187,10 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "db5aaa8bc709dd8a",
+  "active": "f4f6eaaf8a558394",
   "lastOpenFiles": [
+    "Health/Health Dashboard.html",
+    "daily/2026-09-23.md",
     "data/garmin/2026-10-06.json",
     "daily/2026-10-06.md.tmp",
     "daily/2026-10-06.md",
@@ -202,17 +202,14 @@
     "data/food/2026-10-03.json",
     "data/garmin/2026-10-03.json",
     "daily/2026-10-03.md",
-    "Health/Health Dashboard.html",
     "data/garmin/2026-10-02.json",
     "11",
-    "0",
     "daily/2026-10-02.md",
     "daily/2026-10-01.md",
     "daily/2026-09-26.md",
     "daily/2026-09-30.md",
     "daily/2026-09-29.md",
     "daily/2026-09-25.md",
-    "daily/2026-09-23.md",
     "o-mnie.md",
     "templates/daily.md",
     "scripts/launchd/README.md",
