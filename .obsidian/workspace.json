@@ -189,6 +189,9 @@
   },
   "active": "0006014be054510c",
   "lastOpenFiles": [
+    "daily/2026-10-07.md.tmp",
+    "daily/2026-10-07.md",
+    "o-mnie.md",
     "Health/Health Dashboard.html",
     "data/food/2026-10-06.json",
     "data/food/2026-10-05.json",
@@ -204,14 +207,12 @@
     "data/food/2026-10-03.json",
     "data/garmin/2026-10-03.json",
     "daily/2026-10-03.md",
-    "data/garmin/2026-10-02.json",
     "daily/2026-10-02.md",
     "daily/2026-10-01.md",
     "daily/2026-09-26.md",
     "daily/2026-09-30.md",
     "daily/2026-09-29.md",
     "daily/2026-09-25.md",
-    "o-mnie.md",
     "templates/daily.md",
     "scripts/launchd/README.md",
     "daily/2026-09-24.md",
@@ -224,7 +225,6 @@
     "node_modules/request/node_modules/form-data/README.md",
     "node_modules/@cypress/request-promise/node_modules/tough-cookie/README.md",
     "node_modules/request/node_modules/qs/README.md",
-    "node_modules/request/node_modules/qs/LICENSE.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
