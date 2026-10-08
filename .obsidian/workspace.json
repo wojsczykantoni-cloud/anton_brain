@@ -189,6 +189,8 @@
   },
   "active": "0006014be054510c",
   "lastOpenFiles": [
+    "daily/2026-10-08.md.tmp",
+    "daily/2026-10-08.md",
     "daily/2026-10-07.md.tmp",
     "daily/2026-10-07.md",
     "o-mnie.md",
@@ -205,7 +207,6 @@
     "data/garmin/2026-10-04.json",
     "daily/2026-10-04.md",
     "data/food/2026-10-03.json",
-    "data/garmin/2026-10-03.json",
     "daily/2026-10-03.md",
     "daily/2026-10-02.md",
     "daily/2026-10-01.md",
@@ -224,7 +225,6 @@
     "node_modules/@cypress/request-promise/README.md",
     "node_modules/request/node_modules/form-data/README.md",
     "node_modules/@cypress/request-promise/node_modules/tough-cookie/README.md",
-    "node_modules/request/node_modules/qs/README.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
