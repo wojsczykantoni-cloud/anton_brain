@@ -189,6 +189,7 @@
   },
   "active": "0006014be054510c",
   "lastOpenFiles": [
+    "daily/2026-10-10.md",
     "daily/2026-10-09.md",
     "daily/2026-10-08.md.tmp",
     "daily/2026-10-08.md",
@@ -224,7 +225,6 @@
     "node_modules/combined-stream/Readme.md",
     "node_modules/@cypress/request-promise/README.md",
     "node_modules/request/node_modules/form-data/README.md",
-    "node_modules/@cypress/request-promise/node_modules/tough-cookie/README.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
