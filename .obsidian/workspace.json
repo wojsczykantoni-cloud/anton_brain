@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "c5907f568c2e611c",
+        "id": "11cec54ff26ca11f",
         "type": "tabs",
         "children": [
           {
-            "id": "d7e7a75067253872",
+            "id": "7f01f56472d0a569",
             "type": "leaf",
             "state": {
               "type": "html-view",
@@ -187,8 +187,11 @@
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "d7e7a75067253872",
+  "active": "7f01f56472d0a569",
   "lastOpenFiles": [
+    "data/food/2026-10-09.json",
+    "data/food/2026-10-08.json",
+    "data/food/2026-10-07.json",
     "Health/Health Dashboard.html",
     "daily/2026-10-10.md",
     "daily/2026-10-09.md",
@@ -205,8 +208,6 @@
     "daily/2026-10-06.md",
     "data/garmin/2026-10-05.json",
     "daily/2026-10-05.md",
-    "data/food/2026-10-04.json",
-    "data/garmin/2026-10-04.json",
     "daily/2026-10-04.md",
     "daily/2026-10-03.md",
     "daily/2026-10-02.md",

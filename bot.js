@@ -625,7 +625,34 @@ bot.onText(/^\/usun(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
 });
 
 const DZIEN_USAGE =
-  'Format: /dzien [wczoraj] <kcal> b<białko> w<węgle> t<tłuszcze>, np. /dzien 2450 b160 w300 t70.';
+  'Format: /dzien [wczoraj|DD.MM[.RRRR]] <kcal> b<białko> w<węgle> t<tłuszcze>, ' +
+  'np. /dzien 2450 b160 w300 t70 albo /dzien 07.10 2594 b208 w290 t62.';
+
+// Parsuje jawną datę "DD.MM" lub "DD.MM.RRRR" na "RRRR-MM-DD". Bez roku
+// przyjmuje bieżący; poprzedni tylko na przełomie roku (np. 30.12 wpisane
+// w styczniu), gdy daje to datę z ostatnich 90 dni - literówka typu "jutro"
+// nie ląduje wtedy cicho rok wcześniej. Zwraca null dla nieistniejącej daty
+// (np. 31.02) albo daty z przyszłości - zaległości wpisujemy tylko wstecz.
+function parseFoodDate(token, now = new Date()) {
+  const m = token.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?$/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const today = startOfDay(now);
+
+  let year = m[3] ? Number(m[3]) : today.getFullYear();
+  let d = new Date(year, month - 1, day);
+  if (!m[3] && d > today) {
+    const prev = new Date(year - 1, month - 1, day);
+    if (prev >= addDays(today, -90)) {
+      year -= 1;
+      d = prev;
+    }
+  }
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  if (d > today) return null;
+  return isoDateFor(d);
+}
 
 bot.onText(/^\/dzien(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   if (!isAuthorized(msg)) return;
@@ -637,9 +664,17 @@ bot.onText(/^\/dzien(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   }
 
   const tokens = raw.split(/\s+/).filter(Boolean);
-  let isYesterday = false;
+  let dateStr = todayISO();
   if (tokens.length && /^wczoraj$/i.test(tokens[0])) {
-    isYesterday = true;
+    dateStr = isoDateFor(addDays(new Date(), -1));
+    tokens.shift();
+  } else if (tokens.length && /^\d{1,2}\.\d{1,2}(?:\.\d{4})?$/.test(tokens[0])) {
+    const parsedDate = parseFoodDate(tokens[0]);
+    if (!parsedDate) {
+      await bot.sendMessage(msg.chat.id, `❌ Nieprawidłowa data „${tokens[0]}” (nie może być z przyszłości). ${DZIEN_USAGE}`);
+      return;
+    }
+    dateStr = parsedDate;
     tokens.shift();
   }
 
@@ -648,8 +683,6 @@ bot.onText(/^\/dzien(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
     await bot.sendMessage(msg.chat.id, DZIEN_USAGE);
     return;
   }
-
-  const dateStr = isYesterday ? isoDateFor(addDays(new Date(), -1)) : todayISO();
 
   try {
     saveFoodDay(dateStr, macros);
