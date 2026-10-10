@@ -12,8 +12,11 @@ written daily by a Shortcut. Parses that date format, rounds the weight to
 {date, kg} shape the Telegram bot's /waga command writes (one entry per
 day, overwriting any existing entry for that day). If waga.txt doesn't
 exist yet (the Shortcut hasn't run), this is not an error - the script
-just says so and exits cleanly. On a successful write, rebuilds the
-dashboard.
+just says so and exits cleanly. Likewise for a waga.txt without a usable
+reading (invalid JSON, or a missing, empty or non-numeric "kg"): the
+script logs one timestamped "waga.txt: brak pomiaru, pomijam" line, leaves
+data/weight.json untouched and exits 0. A decimal comma ("87,6", quoted or
+not) is accepted as 87.6. On a successful write, rebuilds the dashboard.
 
 The file read is retried with growing backoff on OSError (e.g. "Resource
 deadlock avoided"), since iCloud can briefly hold waga.txt locked right
@@ -25,10 +28,12 @@ this runs under garmin_daily.sh via launchd.
 from __future__ import annotations
 
 import json
+import math
+import re
 import subprocess
 import sys
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -43,6 +48,45 @@ MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
 }
+
+
+# Unquoted decimal comma, e.g. {"kg": 87,6, ...} from a Polish-locale
+# Shortcut - invalid JSON as written, so it's normalised before parsing.
+KG_DECIMAL_COMMA_RE = re.compile(r'("kg"\s*:\s*-?\d+),(\d+)')
+
+
+def log_no_reading() -> None:
+    print(f"{datetime.now():%Y-%m-%d %H:%M:%S} - waga.txt: brak pomiaru, pomijam")
+
+
+def parse_payload(raw_text: str) -> dict | None:
+    """Parses waga.txt as a JSON object, falling back to a copy with an unquoted
+    decimal comma in "kg" fixed. Returns None if it's still not a JSON object."""
+    for text in (raw_text, KG_DECIMAL_COMMA_RE.sub(r"\1.\2", raw_text)):
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        return payload if isinstance(payload, dict) else None
+    return None
+
+
+def parse_kg(value: object) -> float | None:
+    """Returns the weight as a finite float - from a JSON number or a numeric
+    string with either a dot or a comma ("87,6" -> 87.6). None for anything
+    else (missing, empty, non-numeric)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        kg = float(value)
+    elif isinstance(value, str):
+        try:
+            kg = float(value.strip().replace(",", "."))
+        except ValueError:
+            return None
+    else:
+        return None
+    return kg if math.isfinite(kg) else None
 
 
 def parse_waga_date(raw: str) -> date:
@@ -106,16 +150,15 @@ def main() -> None:
         print(f"Nie udało się odczytać waga.txt po {tries} próbach: {err}", file=sys.stderr)
         sys.exit(1)
 
-    try:
-        payload = json.loads(raw_text)
-    except json.JSONDecodeError as err:
-        print(f"Nie udało się odczytać waga.txt: {err}", file=sys.stderr)
-        sys.exit(1)
+    payload = parse_payload(raw_text)
+    kg = parse_kg(payload.get("kg")) if payload is not None else None
+    if kg is None:
+        log_no_reading()
+        return
 
-    kg = payload.get("kg")
     date_raw = payload.get("date")
-    if kg is None or not isinstance(date_raw, str):
-        print("waga.txt nie zawiera oczekiwanych pól 'kg'/'date'.", file=sys.stderr)
+    if not isinstance(date_raw, str):
+        print("waga.txt nie zawiera oczekiwanego pola 'date'.", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -125,7 +168,7 @@ def main() -> None:
         sys.exit(1)
 
     date_str = entry_date.isoformat()
-    kg_rounded = round(float(kg), 1)
+    kg_rounded = round(kg, 1)
 
     entries = load_weight_entries()
     entries = upsert_entry(entries, date_str, kg_rounded)
