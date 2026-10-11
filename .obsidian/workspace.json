@@ -189,6 +189,7 @@
   },
   "active": "54b2f1a240e09cd2",
   "lastOpenFiles": [
+    "data/garmin/2026-10-11.json",
     "daily/2026-10-11.md",
     "data/food/2026-10-10.json",
     "Health/Health Dashboard.html",
@@ -224,7 +225,6 @@
     "anton musk.md",
     "example.md",
     "node_modules/combined-stream/Readme.md",
-    "node_modules/@cypress/request-promise/README.md",
     "node_modules/psl/browserstack-logo.svg",
     "Untitled.canvas"
   ]
