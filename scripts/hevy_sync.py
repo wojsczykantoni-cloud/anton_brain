@@ -17,6 +17,8 @@ templates (muscle groups for the training dashboard) are cached in
 data/hevy/exercise_templates.json and re-fetched only when a workout refers
 to a template that isn't cached yet. The sync cursor lives in
 data/hevy/state.json and only advances after a fully successful run.
+Workouts imported earlier from a CSV export (scripts/hevy_csv_import.py,
+files csv-*.json) are removed once the API returns the same workout.
 
 Requests are retried with growing backoff on network errors, 429 and 5xx.
 Timestamps in the log come from scripts/refresh_all.sh, which runs this.
@@ -43,6 +45,7 @@ HEVY_DIR = REPO_ROOT / "data" / "hevy"
 WORKOUTS_DIR = HEVY_DIR / "workouts"
 TEMPLATES_PATH = HEVY_DIR / "exercise_templates.json"
 STATE_PATH = HEVY_DIR / "state.json"
+CSV_ID_PREFIX = "csv-"  # workouts/templates written by hevy_csv_import.py
 
 API_BASE = "https://api.hevyapp.com/v1"
 PAGE_SIZE = 10  # API maximum for workouts and events
@@ -204,8 +207,32 @@ def sync_templates(client: HevyClient) -> int:
                 "secondary_muscle_groups": t.get("secondary_muscle_groups") or [],
                 "equipment": t.get("equipment"),
             }
+    # Keep the guessed templates of CSV-imported workouts (hevy_csv_import.py).
+    templates.update({k: v for k, v in cached.items() if k.startswith(CSV_ID_PREFIX) and k not in templates})
     write_json(TEMPLATES_PATH, templates)
     return len(templates)
+
+
+def drop_csv_duplicates() -> int:
+    """Removes CSV-imported workouts (hevy_csv_import.py) that the API now
+    returns too - same start minute - so nothing is counted twice."""
+    api_minutes, csv_files = set(), []
+    for path in WORKOUTS_DIR.glob("*.json"):
+        start = str(load_json(path, {}).get("start_time") or "")
+        if path.name.startswith(CSV_ID_PREFIX):
+            csv_files.append((path, start[:16]))
+        elif start:
+            try:
+                dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            api_minutes.add(utc_iso(dt)[:16])
+    removed = 0
+    for path, minute in csv_files:
+        if minute in api_minutes:
+            path.unlink()
+            removed += 1
+    return removed
 
 
 def main() -> None:
@@ -222,6 +249,7 @@ def main() -> None:
     try:
         saved, deleted = sync_workouts(client, state)
         templates = sync_templates(client)
+        csv_dropped = drop_csv_duplicates()
     except HevyAuthError as err:
         print(str(err), file=sys.stderr)
         sys.exit(EXIT_AUTH)
@@ -233,6 +261,8 @@ def main() -> None:
     write_json(STATE_PATH, state)
     total = len(list(WORKOUTS_DIR.glob("*.json")))
     extra = f", odświeżono {templates} szablonów ćwiczeń" if templates else ""
+    if csv_dropped:
+        extra += f", usunięto {csv_dropped} duplikatów z importu CSV"
     print(f"Gotowe. Hevy: {saved} nowych/zmienionych, {deleted} usuniętych, razem {total} treningów{extra}.")
 
 

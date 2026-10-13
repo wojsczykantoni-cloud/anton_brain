@@ -24,7 +24,7 @@ import subprocess
 import sys
 import time
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -32,11 +32,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STATUS_PATH = REPO_ROOT / "data" / "status.json"
 LOCK_PATH = REPO_ROOT / "data" / ".status.lock"
 ENV_PATH = REPO_ROOT / ".env"
+HEVY_CSV_STATE_PATH = REPO_ROOT / "data" / "hevy" / "csv_import.json"
+HEVY_CSV_STALE_DAYS = 10
 
 STEP_LABELS = {
     "network": "Sieć",
     "garmin": "Garmin",
     "hevy": "Hevy",
+    "hevy_csv": "Hevy CSV",
     "waga": "Waga",
     "dashboard": "Dashboard",
     "morning_brief": "Morning brief",
@@ -147,6 +150,26 @@ def send_telegram(text: str, attempts: int = 3, pause: float = 10.0) -> bool:
     return False
 
 
+def hevy_csv_hint(status: dict[str, Any]) -> str | None:
+    """Hint for the alert when Hevy data comes from the CSV fallback and the
+    newest export (data/hevy/csv_import.json) is over 10 days old."""
+    entry = status["steps"].get("hevy_csv") or {}
+    if entry.get("result") not in ("ok", "fail"):
+        return None  # API works, or there's no CSV at all
+    try:
+        csv_state = json.loads(HEVY_CSV_STATE_PATH.read_text(encoding="utf-8"))
+        mtime = datetime.strptime(csv_state["newest_mtime"], "%Y-%m-%dT%H:%M:%S")
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if datetime.now() - mtime <= timedelta(days=HEVY_CSV_STALE_DAYS):
+        return None
+    age = (datetime.now() - mtime).days
+    return (
+        f"💡 Hevy: najnowszy CSV ({csv_state.get('newest_file')}) ma {age} dni - wyeksportuj "
+        "świeży (Hevy → Profil → Ustawienia → Eksportuj dane) do głównego katalogu iCloud Drive."
+    )
+
+
 def cmd_alert(_args: list[str]) -> int:
     today = datetime.now().strftime("%Y-%m-%d")
     status = load_status()
@@ -170,6 +193,9 @@ def cmd_alert(_args: list[str]) -> int:
         lines.append(f"• {label}: {entry.get('message') or 'błąd'} (ostatni sukces: {last_ok_txt})")
         if entry.get("fix"):
             lines.append(f"  Naprawa: {entry['fix']}")
+    hint = hevy_csv_hint(status)
+    if hint:
+        lines += ["", hint]
     lines += ["", "Szczegóły: /status w bocie, logi w ~/anton_brain/logs/"]
 
     if not send_telegram("\n".join(lines)):

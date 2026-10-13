@@ -60,10 +60,13 @@ const PYTHON_BIN = path.join(__dirname, '.venv', 'bin', 'python');
 const BUILD_DASHBOARD_SCRIPT = path.join(__dirname, 'scripts', 'build_dashboard.py');
 const STATUS_PATH = path.join(__dirname, 'data', 'status.json');
 const GARMIN_DIR = path.join(__dirname, 'data', 'garmin');
+const HEVY_CSV_STATE_PATH = path.join(__dirname, 'data', 'hevy', 'csv_import.json');
+const HEVY_CSV_STALE_DAYS = 10;
 const LAUNCHD_LABELS = ['garminsync', 'morningbrief', 'telegrambot', 'botwatchdog'];
 const STEP_LABELS = {
   garmin: 'Garmin',
   hevy: 'Hevy',
+  hevy_csv: 'Hevy CSV',
   waga: 'Waga',
   dashboard: 'Dashboard',
   morning_brief: 'Morning brief',
@@ -929,6 +932,26 @@ function newestGarminFetch() {
   return newest;
 }
 
+// Import CSV z Hevy (scripts/hevy_csv_import.py) - data ostatniego importu
+// i wiek najnowszego pliku CSV w iCloud Drive.
+function hevyCsvLines() {
+  let st;
+  try {
+    st = JSON.parse(fs.readFileSync(HEVY_CSV_STATE_PATH, 'utf8'));
+  } catch (_) {
+    return ['Ostatni import CSV z Hevy: nigdy'];
+  }
+  const lines = [`Ostatni import CSV z Hevy: ${fmtDateTime(st.last_import)}${st.last_import_file ? ` (${st.last_import_file})` : ''}`];
+  const mtime = st.newest_mtime ? new Date(st.newest_mtime) : null;
+  if (mtime && !Number.isNaN(mtime.getTime())) {
+    const ageDays = (Date.now() - mtime.getTime()) / 86400000;
+    lines.push(ageDays > HEVY_CSV_STALE_DAYS
+      ? `⚠️ Najnowszy CSV (${st.newest_file}) z ${fmtDateTime(mtime)}, ma ${Math.floor(ageDays)} dni - wyeksportuj świeży z Hevy do iCloud Drive`
+      : `Najnowszy CSV (${st.newest_file}) z ${fmtDateTime(mtime)}`);
+  }
+  return lines;
+}
+
 async function launchdJobLine(label) {
   const uid = process.getuid();
   try {
@@ -954,6 +977,7 @@ async function buildStatusText() {
   lines.push(staleMs > 24 * 3600 * 1000
     ? `⚠️ Dane w dashboardzie nieaktualne (najnowsze z ${fmtDateTime(newest)})`
     : `Dane w dashboardzie aktualne (pobrane ${fmtDateTime(newest)})`);
+  lines.push(...hevyCsvLines());
   lines.push('');
 
   lines.push('Kroki (ostatni przebieg):');

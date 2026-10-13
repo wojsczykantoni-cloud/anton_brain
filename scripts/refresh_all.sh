@@ -1,5 +1,5 @@
 #!/bin/bash
-# Jeden przebieg aktualizacji: Garmin -> Hevy -> waga -> dashboard.
+# Jeden przebieg aktualizacji: Garmin -> Hevy (API, awaryjnie CSV) -> waga -> dashboard.
 # Wywoływany przez launchd (com.antonbrain.garminsync) o 11:20, 15:30, 21:00,
 # przy logowaniu (RunAtLoad) i po wybudzeniu Maca, jeśli termin wypadł we śnie.
 # Wynik każdego kroku trafia do data/status.json; przy awarii idzie alert na
@@ -43,8 +43,8 @@ fi
 # 2. Hevy (inkrementalnie przez /workouts/events; brak klucza = pominięcie).
 if [ $NET_OK -eq 1 ]; then
   run_logged "$OUT" "$PY" scripts/hevy_sync.py
-  rc=$?
-  case $rc in
+  HEVY_RC=$?
+  case $HEVY_RC in
     0) status_set hevy ok "$(last_line "$OUT")" ;;
     4) status_set hevy skip "$(last_line "$OUT")" ;;
     2) status_set hevy fail "$(last_line "$OUT")" --fix "Sprawdź HEVY_API_KEY w ~/anton_brain/.env (hevy.com/settings?developer, wymaga Pro), potem: cd ~/anton_brain && scripts/refresh_all.sh"; FAILED=1 ;;
@@ -53,6 +53,20 @@ if [ $NET_OK -eq 1 ]; then
 else
   status_set hevy fail "Brak sieci/DNS przez 2 min" --fix "$FIX_RUN"
   FAILED=1
+fi
+
+# 2b. Hevy z CSV - tryb awaryjny, gdy API niedostępne z braku klucza (4) albo
+# dostępu (2). Brak klucza przy zaimportowanym CSV to nie błąd (hevy = skip).
+HEVY_RC=${HEVY_RC:-}
+if [ "$HEVY_RC" = 4 ] || [ "$HEVY_RC" = 2 ]; then
+  run_logged "$OUT" "$PY" scripts/hevy_csv_import.py
+  case $? in
+    0) status_set hevy_csv ok "$(last_line "$OUT")" ;;
+    5) status_set hevy_csv skip "$(last_line "$OUT")" ;;
+    *) status_set hevy_csv fail "$(last_line "$OUT")" --fix "Wyeksportuj dane z Hevy (Profil → Ustawienia → Eksportuj dane) do iCloud Drive, potem: cd ~/anton_brain && .venv/bin/python scripts/hevy_csv_import.py"; FAILED=1 ;;
+  esac
+elif [ "$HEVY_RC" = 0 ]; then
+  status_set hevy_csv skip "API Hevy działa - import CSV niepotrzebny"
 fi
 
 # 3. Waga - pusty lub niepoprawny waga.txt to "brak pomiaru", nie błąd (exit 0).
