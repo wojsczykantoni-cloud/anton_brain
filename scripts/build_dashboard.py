@@ -1242,6 +1242,7 @@ def build_html(
     food_by_date: dict[str, dict[str, Any]],
     weight_entries: list[dict[str, Any]],
     targets: dict[str, Any] | None,
+    workouts: list[dict[str, Any]],
 ) -> str:
     if records:
         layout = (
@@ -1265,6 +1266,7 @@ def build_html(
     sync_dt = latest_sync_dt(records)
     sync_text = esc(fmt_dt_pl(sync_dt)) if sync_dt else "brak danych"
     stale_banner = build_stale_banner(records)
+    training = build_training_panel(workouts, records, weight_entries)
 
     return f"""<!DOCTYPE html>
 <html lang="pl">
@@ -1275,14 +1277,39 @@ def build_html(
 <style>{CSS}</style>
 </head>
 <body>
+<input type="radio" name="tab" id="tab-zdrowie" class="tab-input" checked>
+<input type="radio" name="tab" id="tab-trening" class="tab-input">
 {stale_banner}
 <header>
   <h1>Health Dashboard</h1>
   <p class="meta">Ostatnia synchronizacja danych: <b>{sync_text}</b> &middot; Wygenerowano: {generated}</p>
 </header>
-<main class="layout">
+<nav class="tabs" aria-label="Zakładki">
+  <label for="tab-zdrowie">Zdrowie</label>
+  <label for="tab-trening">Trening</label>
+</nav>
+<main class="layout panel panel-zdrowie">
 {layout}
 </main>
+<main class="layout panel panel-trening">
+{training}
+</main>
+<script>
+// Obsidian reloads the file after every rebuild - keep the chosen tab.
+(function () {{
+  var KEY = "health-dashboard-tab";
+  try {{
+    var saved = localStorage.getItem(KEY);
+    var el = saved && document.getElementById(saved);
+    if (el) el.checked = true;
+  }} catch (e) {{}}
+  document.querySelectorAll(".tab-input").forEach(function (input) {{
+    input.addEventListener("change", function () {{
+      try {{ localStorage.setItem(KEY, input.id); }} catch (e) {{}}
+    }});
+  }});
+}})();
+</script>
 </body>
 </html>
 """
@@ -1293,10 +1320,11 @@ def main() -> None:
     food_by_date = load_food_records()
     weight_entries = load_weight_entries()
     targets = load_targets()
-    html = build_html(records, food_by_date, weight_entries, targets)
+    workouts = load_hevy_workouts()
+    html = build_html(records, food_by_date, weight_entries, targets, workouts)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(html, encoding="utf-8")
-    print(f"Zapisano dashboard: {OUT_PATH} ({len(records)} dni danych, {len(html)} znaków).")
+    print(f"Zapisano dashboard: {OUT_PATH} ({len(records)} dni danych, {len(workouts)} treningów, {len(html)} znaków).")
 
 
 if __name__ == "__main__":
