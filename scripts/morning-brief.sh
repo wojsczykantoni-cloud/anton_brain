@@ -76,12 +76,12 @@ else
   log "Nie udało się zaktualizować sekcji Plan dnia (wysyłam wiadomość mimo to)."
 fi
 
-# (c) wyślij podsumowanie na Telegram
-MESSAGE="☀️ Dzień dobry! Plan na dziś ($TODAY):
-
-$EVENTS
-
-🎯 Pamiętaj, żeby ustawić priorytety na dziś w notatce."
+# (c) wyślij podsumowanie na Telegram (treść składa scripts/brief_message.py)
+if ! MESSAGE="$("$PY" scripts/brief_message.py "$NOTE_PATH" 2> >(ts_pipe))"; then
+  status_set morning_brief fail "Nie udało się złożyć treści briefu (szczegóły w logs/morning-brief.log)" --fix "$FIX"
+  status_alert
+  exit 1
+fi
 # Limit Telegrama to 4096 znaków.
 if [ "${#MESSAGE}" -gt 4000 ]; then
   MESSAGE="${MESSAGE:0:3950}
