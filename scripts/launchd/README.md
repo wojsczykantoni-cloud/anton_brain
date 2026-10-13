@@ -1,56 +1,30 @@
 # launchd agents
 
-Kopie referencyjne plistów launchd używanych do uruchamiania bota Telegram i
-morning brief. Trzymane w repo dla historii/backupu — same w sobie nie są
-przez macOS wykonywane stąd.
+Kopie referencyjne plistów launchd. Działające kopie leżą w
+`~/Library/LaunchAgents/` - po zmianie pliku tutaj skopiuj go tam i przeładuj.
 
-## Gdzie mają leżeć w systemie
+| Label | Co robi | Kiedy |
+|---|---|---|
+| `com.antonbrain.garminsync` | `scripts/refresh_all.sh`: Garmin → waga → dashboard | 11:20, 15:30, 21:00, przy logowaniu (`RunAtLoad`), po wybudzeniu jeśli termin wypadł we śnie |
+| `com.antonbrain.morningbrief` | `scripts/morning-brief.sh`: notatka dnia + brief na Telegram | 7:00, przy logowaniu, po wybudzeniu (wysyła najwyżej raz dziennie, tylko przed 14:00) |
+| `com.antonbrain.telegrambot` | `open -a Terminal scripts/start-bot.command` (Terminal ma dostęp do Kalendarza dla `ical`); pętla restartuje `node bot.js` po kodzie ≠ 0 | przy logowaniu |
+| `com.antonbrain.botwatchdog` | `scripts/bot_watchdog.sh`: wskrzesza bota, gdy nie działa ani bot, ani pętla restartu | co 3 min i przy logowaniu |
 
-```
-~/Library/LaunchAgents/com.antonbrain.telegrambot.plist
-~/Library/LaunchAgents/com.antonbrain.morningbrief.plist
-~/Library/LaunchAgents/com.antonbrain.botwatchdog.plist
-```
-
-## Instalacja / aktualizacja
-
-Skopiuj plik z repo do `~/Library/LaunchAgents/`, a potem załaduj go w launchd:
+## Instalacja / przeładowanie po zmianie
 
 ```bash
-cp scripts/launchd/com.antonbrain.telegrambot.plist ~/Library/LaunchAgents/
-cp scripts/launchd/com.antonbrain.morningbrief.plist ~/Library/LaunchAgents/
-cp scripts/launchd/com.antonbrain.botwatchdog.plist ~/Library/LaunchAgents/
-
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.antonbrain.telegrambot.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.antonbrain.morningbrief.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.antonbrain.botwatchdog.plist
+cp scripts/launchd/com.antonbrain.*.plist ~/Library/LaunchAgents/
+for l in garminsync morningbrief telegrambot botwatchdog; do
+  launchctl bootout gui/$(id -u)/com.antonbrain.$l 2>/dev/null
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.antonbrain.$l.plist
+done
 ```
 
-## Przeładowanie po zmianie pliku
+## Diagnostyka
 
-```bash
-launchctl bootout gui/$(id -u)/com.antonbrain.telegrambot
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.antonbrain.telegrambot.plist
-
-launchctl bootout gui/$(id -u)/com.antonbrain.morningbrief
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.antonbrain.morningbrief.plist
-```
-
-## Sprawdzenie statusu
-
-```bash
-launchctl list | grep antonbrain
-```
-
-`com.antonbrain.telegrambot` uruchamia się przez `open -a Terminal` na
-`scripts/start-bot.command` (bez `KeepAlive` — nie restartuje się sam po
-crashu, tylko przy kolejnym logowaniu przez `RunAtLoad`).
-
-`com.antonbrain.morningbrief` uruchamia się codziennie o 7:00
-(`StartCalendarInterval`) przez `scripts/morning-brief.sh`.
-
-`com.antonbrain.botwatchdog` uruchamia się co 3 minuty (`StartInterval: 180`)
-przez `scripts/bot_watchdog.sh` — sprawdza, czy proces `node bot.js` działa,
-a jeśli nie, robi `bootout` + `bootstrap` na `com.antonbrain.telegrambot`, żeby
-go wskrzesić. Interwencje loguje do `logs/watchdog.log`; gdy bot działa,
-skrypt nic nie robi i nic nie loguje.
+- `/status` w bocie: ostatni sukces, wynik kroków, stan zadań launchd, uptime bota.
+- `data/status.json`: wynik każdego kroku (`garmin`, `waga`, `dashboard`, `morning_brief`) z komendą naprawczą.
+- Logi (każda linia z datą, rotacja przy 1 MB): `logs/refresh.log`, `logs/morning-brief.log`, `logs/bot.log`, `logs/watchdog.log`; `logs/launchd-jobs.log` łapie tylko to, co wymknęło się skryptom.
+- `launchctl print gui/$(id -u)/com.antonbrain.garminsync | grep -E "runs|last exit"`.
+- Przy awarii kroku idzie alert na Telegram (raz dziennie na krok) z komendą naprawczą.
+  Tokeny Garmin nieważne → `cd ~/anton_brain && .venv/bin/python scripts/garmin_login.py && scripts/refresh_all.sh`.
