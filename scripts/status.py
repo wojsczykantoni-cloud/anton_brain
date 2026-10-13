@@ -20,10 +20,9 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import subprocess
 import sys
 import time
-import urllib.parse
-import urllib.request
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -124,15 +123,24 @@ def send_telegram(text: str, attempts: int = 3, pause: float = 10.0) -> bool:
     if not token or not chat_id:
         print("Brak TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID - nie wysyłam alertu.", file=sys.stderr)
         return False
-    body = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    # System curl (Keychain trust store, like morning-brief.sh) rather than
+    # urllib, whose bundled CA list can reject the chain. The URL with the
+    # token goes in via stdin (-K -) so it never shows up in `ps`.
+    config = f'url = "https://api.telegram.org/bot{token}/sendMessage"\n'
+    cmd = [
+        "curl", "-sS", "--max-time", "20", "-K", "-",
+        "--data-urlencode", f"chat_id={chat_id}",
+        "--data-urlencode", f"text={text}",
+    ]
     for attempt in range(1, attempts + 1):
         try:
-            with urllib.request.urlopen(url, data=body, timeout=20) as resp:
-                if json.loads(resp.read().decode()).get("ok"):
-                    return True
-        except Exception as err:  # noqa: BLE001 - any failure means "retry"
-            print(f"Wysyłka alertu, próba {attempt}/{attempts} nieudana: {err}", file=sys.stderr)
+            res = subprocess.run(cmd, input=config, capture_output=True, text=True, timeout=30)
+            if '"ok":true' in res.stdout:
+                return True
+            err = (res.stderr or res.stdout).strip().replace(token, "***")[:300]
+        except Exception as exc:  # noqa: BLE001 - any failure means "retry"
+            err = str(exc)
+        print(f"Wysyłka alertu, próba {attempt}/{attempts} nieudana: {err}", file=sys.stderr)
         if attempt < attempts:
             time.sleep(pause)
     return False
