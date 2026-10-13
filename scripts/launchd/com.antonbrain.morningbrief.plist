@@ -20,6 +20,11 @@
         <string>/Users/antoniwojsczyk/.nvm/versions/node/v24.15.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 
+    <!-- Skrypt wysyła brief najwyżej raz dziennie i tylko przed 14:00,
+         więc RunAtLoad / nadrobienie po wybudzeniu nie dubluje wiadomości. -->
+    <key>RunAtLoad</key>
+    <true/>
+
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -29,9 +34,9 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/antoniwojsczyk/anton_brain/logs/morning-brief.log</string>
+    <string>/Users/antoniwojsczyk/anton_brain/logs/launchd-jobs.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/antoniwojsczyk/anton_brain/logs/morning-brief.log</string>
+    <string>/Users/antoniwojsczyk/anton_brain/logs/launchd-jobs.log</string>
 </dict>
 </plist>

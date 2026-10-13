@@ -20,6 +20,9 @@
         <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 
+    <key>RunAtLoad</key>
+    <true/>
+
     <key>StartInterval</key>
     <integer>180</integer>
 

@@ -2,8 +2,45 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
+const util = require('util');
 const { execFile } = require('child_process');
 const TelegramBot = require('node-telegram-bot-api');
+
+// Każda linia logu z datą i godziną: na konsolę (okno Terminala) i do
+// logs/bot.log, rotowanego (jedna kopia .1) po przekroczeniu 1 MB.
+const BOT_LOG_PATH = path.join(__dirname, 'logs', 'bot.log');
+const LOG_MAX_BYTES = 1024 * 1024;
+
+function timestamp(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function appendBotLog(text) {
+  try {
+    fs.mkdirSync(path.dirname(BOT_LOG_PATH), { recursive: true });
+    try {
+      if (fs.statSync(BOT_LOG_PATH).size > LOG_MAX_BYTES) {
+        fs.renameSync(BOT_LOG_PATH, `${BOT_LOG_PATH}.1`);
+      }
+    } catch (_) { /* brak pliku - nic do rotacji */ }
+    fs.appendFileSync(BOT_LOG_PATH, text);
+  } catch (_) { /* logowanie nie może wywrócić bota */ }
+}
+
+for (const level of ['log', 'error']) {
+  const original = console[level].bind(console);
+  console[level] = (...args) => {
+    const line = `${timestamp()} ${level === 'error' ? 'ERROR ' : ''}${util.format(...args)}`;
+    original(line);
+    appendBotLog(`${line}\n`);
+  };
+}
+
+process.on('unhandledRejection', (err) => {
+  console.error('Nieobsłużony błąd (promise):', err && err.message ? err.message : err);
+});
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = String(process.env.TELEGRAM_CHAT_ID);
@@ -21,6 +58,16 @@ const WEIGHT_PATH = path.join(__dirname, 'data', 'weight.json');
 const TARGETS_PATH = path.join(__dirname, 'data', 'targets.json');
 const PYTHON_BIN = path.join(__dirname, '.venv', 'bin', 'python');
 const BUILD_DASHBOARD_SCRIPT = path.join(__dirname, 'scripts', 'build_dashboard.py');
+const STATUS_PATH = path.join(__dirname, 'data', 'status.json');
+const GARMIN_DIR = path.join(__dirname, 'data', 'garmin');
+const LAUNCHD_LABELS = ['garminsync', 'morningbrief', 'telegrambot', 'botwatchdog'];
+const STEP_LABELS = {
+  garmin: 'Garmin',
+  waga: 'Waga',
+  dashboard: 'Dashboard',
+  morning_brief: 'Morning brief',
+};
+const BOT_STARTED_AT = new Date();
 
 const KCAL_MIN = 300;
 const KCAL_MAX = 8000;
@@ -780,8 +827,174 @@ bot.on('message', async (msg) => {
   }
 });
 
+// --- Odporność na utratę sieci ---------------------------------------------
+// Po uśpieniu Maca / zmianie Wi-Fi polling sypie ENOTFOUND/ECONNRESET/
+// AggregateError w pętli. Zamiast zalewać log: wstrzymujemy polling i
+// sprawdzamy połączenie (getMe) z wykładniczo rosnącym odstępem (5 s ... 5 min).
+// Jeśli połączenia nie ma przez 15 min, kończymy proces kodem 75 -
+// scripts/start-bot.command uruchamia bota od nowa (kontrolowany restart).
+const POLL_BACKOFF_MIN_MS = 5 * 1000;
+const POLL_BACKOFF_MAX_MS = 5 * 60 * 1000;
+const POLL_STABLE_MS = 2 * 60 * 1000;
+const OFFLINE_RESTART_MS = 15 * 60 * 1000;
+const EXIT_CODE_RESTART = 75;
+
+const connection = {
+  offlineSince: null, // pierwszy błąd bieżącej serii
+  lastError: null,
+  recovering: false,
+  backoffMs: POLL_BACKOFF_MIN_MS,
+  stableTimer: null,
+};
+
 bot.on('polling_error', (err) => {
-  console.error('Polling error:', err.message);
+  connection.lastError = { at: new Date(), message: err.message };
+  if (connection.recovering) return;
+  connection.recovering = true;
+  clearTimeout(connection.stableTimer);
+  if (!connection.offlineSince) connection.offlineSince = Date.now();
+  console.error(`Polling error: ${err.message} - wstrzymuję polling, próba za ${connection.backoffMs / 1000} s`);
+  bot.stopPolling({ cancel: true })
+    .catch(() => {})
+    .finally(scheduleReconnect);
+});
+
+function scheduleReconnect() {
+  setTimeout(async () => {
+    try {
+      await bot.getMe();
+    } catch (err) {
+      connection.lastError = { at: new Date(), message: err.message };
+      const offlineMs = Date.now() - connection.offlineSince;
+      if (offlineMs >= OFFLINE_RESTART_MS) {
+        console.error(`Brak połączenia z Telegramem od ${Math.round(offlineMs / 60000)} min - kontrolowany restart bota.`);
+        process.exit(EXIT_CODE_RESTART);
+      }
+      connection.backoffMs = Math.min(connection.backoffMs * 2, POLL_BACKOFF_MAX_MS);
+      console.error(`Telegram nadal niedostępny (${err.message}) - kolejna próba za ${connection.backoffMs / 1000} s`);
+      scheduleReconnect();
+      return;
+    }
+    console.log(`Połączenie z Telegramem jest - wznawiam polling (przerwa ${Math.round((Date.now() - connection.offlineSince) / 1000)} s).`);
+    connection.recovering = false;
+    // Seria błędów kończy się dopiero, gdy polling działa stabilnie przez 2 min -
+    // inaczej "migająca" sieć resetowałaby licznik 15 min w nieskończoność.
+    connection.stableTimer = setTimeout(() => {
+      connection.offlineSince = null;
+      connection.backoffMs = POLL_BACKOFF_MIN_MS;
+    }, POLL_STABLE_MS);
+    bot.startPolling({ restart: true }).catch((err) => {
+      console.error('Nie udało się wznowić pollingu:', err.message);
+    });
+  }, connection.backoffMs);
+}
+
+// --- /status -----------------------------------------------------------------
+function fmtDateTime(value) {
+  if (!value) return 'nigdy';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fmtDuration(ms) {
+  const min = Math.floor(ms / 60000);
+  const d = Math.floor(min / 1440);
+  const h = Math.floor((min % 1440) / 60);
+  const m = min % 60;
+  return [d && `${d} d`, h && `${h} h`, `${m} min`].filter(Boolean).join(' ');
+}
+
+function readStatusFile() {
+  try {
+    return JSON.parse(fs.readFileSync(STATUS_PATH, 'utf8'));
+  } catch (_) {
+    return { steps: {} };
+  }
+}
+
+function newestGarminFetch() {
+  let newest = null;
+  try {
+    for (const name of fs.readdirSync(GARMIN_DIR)) {
+      if (!name.endsWith('.json')) continue;
+      try {
+        const rec = JSON.parse(fs.readFileSync(path.join(GARMIN_DIR, name), 'utf8'));
+        if (rec.fetched_at && (!newest || rec.fetched_at > newest)) newest = rec.fetched_at;
+      } catch (_) { /* uszkodzony plik pomijamy */ }
+    }
+  } catch (_) { /* brak katalogu */ }
+  return newest;
+}
+
+async function launchdJobLine(label) {
+  const uid = process.getuid();
+  try {
+    const out = await execFileP('launchctl', ['print', `gui/${uid}/com.antonbrain.${label}`]);
+    const runs = (out.match(/\n\s*runs = (\d+)/) || [])[1] || '?';
+    const exit = (out.match(/last exit code = ([^\n]+)/) || [])[1] || '?';
+    const state = (out.match(/\n\s*state = (\S+)/) || [])[1] || '?';
+    const ok = exit === '0' || exit.startsWith('(never exited)') || state === 'running';
+    return `${ok ? '✅' : '⚠️'} ${label}: załadowane, ${state}, uruchomień ${runs}, ostatni kod wyjścia ${exit}`;
+  } catch (_) {
+    return `❌ ${label}: NIEZAŁADOWANE (launchctl bootstrap gui/${uid} ~/Library/LaunchAgents/com.antonbrain.${label}.plist)`;
+  }
+}
+
+async function buildStatusText() {
+  const status = readStatusFile();
+  const steps = status.steps || {};
+  const lines = ['📊 Status anton_brain', ''];
+
+  const newest = newestGarminFetch();
+  const staleMs = newest ? Date.now() - new Date(newest).getTime() : Infinity;
+  lines.push(`Ostatnia udana synchronizacja Garmin: ${fmtDateTime((steps.garmin || {}).last_success || newest)}`);
+  lines.push(staleMs > 24 * 3600 * 1000
+    ? `⚠️ Dane w dashboardzie nieaktualne (najnowsze z ${fmtDateTime(newest)})`
+    : `Dane w dashboardzie aktualne (pobrane ${fmtDateTime(newest)})`);
+  lines.push('');
+
+  lines.push('Kroki (ostatni przebieg):');
+  const icon = { ok: '✅', fail: '❌', skip: '⏭️' };
+  for (const key of [...Object.keys(STEP_LABELS), ...Object.keys(steps).filter((k) => !STEP_LABELS[k])]) {
+    const st = steps[key];
+    if (!st) {
+      lines.push(`▫️ ${STEP_LABELS[key] || key}: brak danych`);
+      continue;
+    }
+    lines.push(`${icon[st.result] || '▫️'} ${STEP_LABELS[key] || key} (${fmtDateTime(st.at)}): ${st.message || st.result}`);
+    if (st.result === 'fail') {
+      lines.push(`   ostatni sukces: ${fmtDateTime(st.last_success)}`);
+      if (st.fix) lines.push(`   naprawa: ${st.fix}`);
+    }
+  }
+  lines.push('');
+
+  lines.push('Zadania launchd:');
+  for (const label of LAUNCHD_LABELS) {
+    lines.push(await launchdJobLine(label));
+  }
+  lines.push('');
+
+  lines.push(`Bot działa od ${fmtDateTime(BOT_STARTED_AT)} (${fmtDuration(Date.now() - BOT_STARTED_AT.getTime())}).`);
+  if (connection.offlineSince) {
+    lines.push(`⚠️ Problemy z połączeniem od ${fmtDateTime(new Date(connection.offlineSince))}`);
+  }
+  if (connection.lastError) {
+    lines.push(`Ostatni błąd pollingu: ${fmtDateTime(connection.lastError.at)} - ${connection.lastError.message}`);
+  }
+  return lines.join('\n');
+}
+
+bot.onText(/^\/status(?:@\w+)?$/, async (msg) => {
+  if (!isAuthorized(msg)) return;
+  try {
+    await sendLong(msg.chat.id, await buildStatusText());
+  } catch (err) {
+    console.error('Błąd /status:', err.message);
+    await bot.sendMessage(msg.chat.id, '❌ Nie udało się zebrać statusu.');
+  }
 });
 
 console.log('Bot Telegram uruchomiony i nasłuchuje...');

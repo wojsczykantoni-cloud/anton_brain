@@ -8,7 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/antoniwojsczyk/anton_brain/scripts/garmin_daily.sh</string>
+        <string>/Users/antoniwojsczyk/anton_brain/scripts/refresh_all.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -20,18 +20,39 @@
         <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>11</integer>
-        <key>Minute</key>
-        <integer>20</integer>
-    </dict>
+    <!-- Przy logowaniu / załadowaniu. Terminy przespane przez Maca launchd
+         odpala po wybudzeniu (jeden raz, nawet jeśli minęło kilka). -->
+    <key>RunAtLoad</key>
+    <true/>
 
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>11</integer>
+            <key>Minute</key>
+            <integer>20</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>15</integer>
+            <key>Minute</key>
+            <integer>30</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>21</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+
+    <!-- Skrypt loguje sam (z datą) do logs/refresh.log; tu trafia tylko to,
+         co wymknęło się logowaniu. -->
     <key>StandardOutPath</key>
-    <string>/Users/antoniwojsczyk/anton_brain/logs/garmin-sync.log</string>
+    <string>/Users/antoniwojsczyk/anton_brain/logs/launchd-jobs.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/antoniwojsczyk/anton_brain/logs/garmin-sync.log</string>
+    <string>/Users/antoniwojsczyk/anton_brain/logs/launchd-jobs.log</string>
 </dict>
 </plist>
