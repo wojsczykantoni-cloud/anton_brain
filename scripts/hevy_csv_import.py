@@ -21,9 +21,12 @@ dates like "13 Oct 2026, 16:00" in local time. Dates are parsed with an
 explicit English month lookup, not strptime's locale-dependent %b.
 
 Each workout is stored as data/hevy/workouts/csv-<uuid5 of start_time>.json
-and rebuilt from the CSV on every import; sets are deduplicated by
-(start_time, exercise_title, set_index), so re-importing the full history
-never duplicates anything and unchanged files aren't rewritten. Warm-up sets
+and the workout (its start_time) is the unit of deduplication: a workout
+already in data/hevy/workouts/ is replaced as a whole by its version from the
+newest CSV, with no per-set deduplication. Re-importing the full history
+therefore never duplicates anything, edits made in Hevy come through, and an
+exercise done in two separate blocks (set_index restarting at 0) keeps all its
+sets as two exercise entries. Unchanged files aren't rewritten. Warm-up sets
 keep type "warmup" (the dashboard leaves them out of working sets) and are
 counted separately in the summary. Workouts already present from the API
 (same start minute) are skipped. Exercises get the real template id when
@@ -284,9 +287,12 @@ def parse_rows(text: str) -> list[dict[str, str]]:
     return [{(k or "").strip(): v for k, v in row.items()} for row in reader]
 
 
-def build_workouts(rows: list[dict[str, str]], templates: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any], int, int]:
-    """Returns (workouts in API shape, csv templates to add, duplicate rows
-    dropped, warm-up sets)."""
+def build_workouts(rows: list[dict[str, str]], templates: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any], int]:
+    """Returns (workouts in API shape, csv templates to add, warm-up sets).
+
+    Rows are grouped into workouts by start_time. Within a workout, a new
+    exercise entry starts whenever the exercise title changes or set_index
+    doesn't grow (the same exercise done again as a separate block)."""
     template_by_title = {
         str(t.get("title")).lower(): tid
         for tid, t in templates.items()
@@ -294,8 +300,7 @@ def build_workouts(rows: list[dict[str, str]], templates: dict[str, Any]) -> tup
     }
     new_templates: dict[str, Any] = {}
     workouts: dict[str, dict[str, Any]] = {}
-    seen: set[tuple[str, str, int]] = set()
-    duplicates = warmups = 0
+    warmups = 0
 
     for line_no, row in enumerate(rows, start=2):
         start_raw = (row.get("start_time") or "").strip()
@@ -311,12 +316,6 @@ def build_workouts(rows: list[dict[str, str]], templates: dict[str, Any]) -> tup
             raise CsvFormatError(f"wiersz {line_no}: {err}") from None
 
         start_iso = utc_iso(start)
-        key = (start_iso, exercise_title, set_index)
-        if key in seen:
-            duplicates += 1
-            continue
-        seen.add(key)
-
         w = workouts.get(start_iso)
         if w is None:
             w = workouts[start_iso] = {
@@ -330,8 +329,12 @@ def build_workouts(rows: list[dict[str, str]], templates: dict[str, Any]) -> tup
                 "source": "csv",
                 "exercises": [],
             }
-        exercise = next((e for e in w["exercises"] if e["title"] == exercise_title), None)
-        if exercise is None:
+        exercise = w["exercises"][-1] if w["exercises"] else None
+        if (
+            exercise is None
+            or exercise["title"] != exercise_title
+            or set_index <= exercise["sets"][-1]["index"]
+        ):
             template_id = template_by_title.get(exercise_title.lower())
             if template_id is None:
                 template_id = csv_template_id(exercise_title)
@@ -368,10 +371,7 @@ def build_workouts(rows: list[dict[str, str]], templates: dict[str, Any]) -> tup
             "custom_metric": None,
         })
 
-    for w in workouts.values():
-        for ex in w["exercises"]:
-            ex["sets"].sort(key=lambda s: s["index"])
-    return sorted(workouts.values(), key=lambda w: w["start_time"]), new_templates, duplicates, warmups
+    return sorted(workouts.values(), key=lambda w: w["start_time"]), new_templates, warmups
 
 
 def api_start_minutes() -> set[str]:
@@ -413,7 +413,7 @@ def main() -> None:
     if not isinstance(templates, dict):
         templates = {}
     try:
-        workouts, new_templates, duplicates, warmups = build_workouts(parse_rows(text), templates)
+        workouts, new_templates, warmups = build_workouts(parse_rows(text), templates)
     except CsvFormatError as err:
         log(f"Niepoprawny format {csv_path.name}: {err}")
         sys.exit(1)
@@ -440,8 +440,6 @@ def main() -> None:
 
     sets_total = sum(len(ex["sets"]) for w in workouts for ex in w["exercises"])
     extras = []
-    if duplicates:
-        extras.append(f"zdublowane wiersze pominięte: {duplicates}")
     if skipped_api:
         extras.append(f"treningi już pobrane z API: {skipped_api}")
     extra = f"; {', '.join(extras)}" if extras else ""
