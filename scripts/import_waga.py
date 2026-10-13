@@ -21,8 +21,8 @@ not) is accepted as 87.6. On a successful write, rebuilds the dashboard.
 The file read is retried with growing backoff on OSError (e.g. "Resource
 deadlock avoided"), since iCloud can briefly hold waga.txt locked right
 after the Shortcut writes it - a single failed read isn't fatal. Retry
-recoveries are printed to stdout, which lands in logs/garmin-sync.log when
-this runs under garmin_daily.sh via launchd.
+recoveries are printed to stdout, which lands in logs/refresh.log when
+this runs under refresh_all.sh via launchd.
 """
 
 from __future__ import annotations

@@ -6,9 +6,14 @@ Usage (from repo root, using the project venv):
     .venv/bin/python scripts/garmin_sync.py
 
 Logs in using ONLY the tokens already saved in ~/.garminconnect by
-scripts/garmin_login.py. Never prompts for a password. If the saved
-tokens are missing or expired, prints a message telling the user to run
-scripts/garmin_login.py and exits with a non-zero status.
+scripts/garmin_login.py. Never prompts for a password. Network errors
+(common right after the Mac wakes) are retried; on an authentication error
+the DI token is refreshed explicitly once and the login retried. After every
+successful run the (possibly refreshed) tokens are written back to
+~/.garminconnect, so the rotating refresh token on disk never goes stale.
+
+Exit codes: 0 OK, 2 tokens invalid (run scripts/garmin_login.py),
+3 network / Garmin unavailable, 1 anything else.
 
 Fetches the last 30 days of: sleep (duration, phases, score, start/end
 times), HRV (overnight average, status, baseline), resting heart rate,
@@ -17,11 +22,13 @@ breakdown (sleep, HRV, sleep history, stress history, recovery time,
 ACWR/load), when the API returns it. Writes one JSON file per day to
 data/garmin/YYYY-MM-DD.json (gitignored).
 
-Runs incrementally: days that already have a saved file are skipped,
-except for the two most recent days, which are always re-fetched since
-Garmin keeps revising them as more data arrives. A short pause is added
-between days that are actually fetched to stay polite to the API.
-Missing fields are stored as null instead of raising errors.
+Runs incrementally and catches up after outages: a day is fetched when
+its file is missing, was saved before the day was over, or was saved while
+some API calls failed ("incomplete"); the two most recent days are always
+re-fetched since Garmin keeps revising them. A day where every API call
+failed is NOT written (that would store a file of nulls) and the run exits
+non-zero. A short pause is added between fetched days to stay polite to
+the API. Missing fields are stored as null instead of raising errors.
 """
 
 from __future__ import annotations
@@ -45,32 +52,100 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "garmin"
 DAYS_TO_SYNC = 30
 DAYS_ALWAYS_REFRESHED = 2
 PAUSE_BETWEEN_DAYS_SECONDS = 0.5
+LOGIN_ATTEMPTS = 3
+LOGIN_RETRY_SECONDS = 20
+MAX_CONSECUTIVE_DAY_FAILURES = 2
+
+EXIT_AUTH = 2
+EXIT_NETWORK = 3
+
+
+class DayFetchError(Exception):
+    """Every API call for a day failed - nothing worth saving."""
+
+    def __init__(self, errors: list[str]):
+        super().__init__("; ".join(errors[:3]))
+        self.errors = errors
+
+    @property
+    def is_auth(self) -> bool:
+        return any("Authentication" in e for e in self.errors)
+
+
+def fail_auth(err: Exception) -> None:
+    print(
+        f"Tokeny Garmin Connect nieważne i nie dało się ich odświeżyć ({err}). "
+        "Uruchom scripts/garmin_login.py, aby zalogować się ponownie.",
+        file=sys.stderr,
+    )
+    sys.exit(EXIT_AUTH)
+
+
+def force_token_refresh(garmin: Garmin) -> None:
+    """Explicitly refresh the DI token and persist it.
+
+    garminconnect refreshes on its own, but swallows refresh errors and then
+    reports a plain 401 - so we do one explicit refresh to tell "refresh token
+    dead" (4xx -> GarminConnectAuthenticationError) from "network down"
+    (any other exception). Uses the library's private _refresh_di_token,
+    since there is no public API for it (garminconnect 0.3.x).
+    """
+    client = garmin.client
+    try:
+        client.load(str(TOKENSTORE))
+    except Exception as err:
+        raise GarminConnectAuthenticationError(f"nie można odczytać {TOKENSTORE}: {err}") from err
+    try:
+        client._refresh_di_token()
+    except GarminConnectAuthenticationError as err:
+        # 429/5xx are Garmin-side hiccups, not a dead refresh token.
+        code = str(err).rsplit(":", 1)[-1].strip()
+        if code.isdigit() and (int(code) == 429 or int(code) >= 500):
+            raise GarminConnectConnectionError(str(err)) from err
+        raise
+    client.dump(str(TOKENSTORE))
+    print("Odświeżono token Garmin i zapisano w ~/.garminconnect.")
 
 
 def login() -> Garmin:
     """Log in using only saved tokens. Never prompts for credentials."""
-    try:
+    refresh_tried = False
+    last_err: Exception | None = None
+    for attempt in range(1, LOGIN_ATTEMPTS + 1):
         garmin = Garmin()
-        garmin.login(str(TOKENSTORE))
-        return garmin
-    except GarminConnectAuthenticationError:
+        try:
+            garmin.login(str(TOKENSTORE))
+            return garmin
+        except GarminConnectAuthenticationError as err:
+            if refresh_tried:
+                fail_auth(err)
+            refresh_tried = True
+            try:
+                force_token_refresh(garmin)
+                continue  # retry login immediately with the fresh token
+            except GarminConnectAuthenticationError as refresh_err:
+                fail_auth(refresh_err)
+            except Exception as refresh_err:  # network while refreshing
+                refresh_tried = False
+                last_err = refresh_err
+        except Exception as err:  # connection errors, 429, transport errors
+            last_err = err
         print(
-            "Brak ważnych tokenów Garmin Connect. Uruchom scripts/garmin_login.py, "
-            "aby zalogować się ponownie.",
+            f"Logowanie do Garmin Connect, próba {attempt}/{LOGIN_ATTEMPTS} nieudana: {last_err}",
             file=sys.stderr,
         )
-        sys.exit(1)
-    except (GarminConnectConnectionError, GarminConnectTooManyRequestsError) as err:
-        print(f"Błąd połączenia z Garmin Connect: {err}", file=sys.stderr)
-        sys.exit(1)
+        if attempt < LOGIN_ATTEMPTS:
+            time.sleep(LOGIN_RETRY_SECONDS)
+    print(
+        f"Błąd połączenia z Garmin Connect po {LOGIN_ATTEMPTS} próbach: {last_err}",
+        file=sys.stderr,
+    )
+    sys.exit(EXIT_NETWORK)
 
 
-def safe_call(fn: Callable[[str], Any], date_str: str) -> Any:
-    """Call a garminconnect getter, returning None on any failure."""
-    try:
-        return fn(date_str)
-    except Exception:
-        return None
+def save_tokens(garmin: Garmin) -> None:
+    """Persist the current (possibly refreshed/rotated) tokens."""
+    garmin.client.dump(str(TOKENSTORE))
 
 
 def dig(obj: Any, *path: str, default: Any = None) -> Any:
@@ -203,6 +278,18 @@ def extract_training_readiness(tr_data: Any) -> dict[str, Any]:
 
 def fetch_day(garmin: Garmin, day: date) -> dict[str, Any]:
     date_str = day.isoformat()
+    errors: list[str] = []
+    calls = 0
+
+    def safe_call(fn: Callable[..., Any], *args: str) -> Any:
+        """Call a garminconnect getter, returning None on any failure."""
+        nonlocal calls
+        calls += 1
+        try:
+            return fn(*args)
+        except Exception as err:
+            errors.append(f"{fn.__name__}: {type(err).__name__}: {err}"[:200])
+            return None
 
     sleep_data = safe_call(garmin.get_sleep_data, date_str)
     hrv_data = safe_call(garmin.get_hrv_data, date_str)
@@ -210,10 +297,10 @@ def fetch_day(garmin: Garmin, day: date) -> dict[str, Any]:
     stress_data = safe_call(garmin.get_stress_data, date_str)
     steps_data = safe_call(garmin.get_steps_data, date_str)
     training_readiness_data = safe_call(garmin.get_training_readiness, date_str)
-    try:
-        bb_data = garmin.get_body_battery(date_str, date_str)
-    except Exception:
-        bb_data = None
+    bb_data = safe_call(garmin.get_body_battery, date_str, date_str)
+
+    if len(errors) == calls:
+        raise DayFetchError(errors)
 
     sleep = extract_sleep(sleep_data)
     if not sleep.get("resting_heart_rate"):
@@ -230,7 +317,23 @@ def fetch_day(garmin: Garmin, day: date) -> dict[str, Any]:
         "stress": extract_stress(stress_data),
         "steps": extract_steps(steps_data),
         "training_readiness": extract_training_readiness(training_readiness_data),
+        # Some calls failed (e.g. network dropped mid-day) - re-fetch next run.
+        "incomplete": bool(errors),
     }
+
+
+def needs_fetch(out_path: Path, day: date, always_refresh: set[date]) -> bool:
+    """Missing, recent, incomplete, or saved before the day was over."""
+    if day in always_refresh or not out_path.exists():
+        return True
+    try:
+        record = json.loads(out_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    if record.get("incomplete"):
+        return True
+    fetched_at = str(record.get("fetched_at") or "")
+    return fetched_at[:10] <= day.isoformat()
 
 
 def main() -> None:
@@ -246,23 +349,50 @@ def main() -> None:
 
     fetched = 0
     skipped = 0
+    failed: list[str] = []
+    auth_failure = False
+    consecutive_failures = 0
 
     for day in days_oldest_first:
         out_path = DATA_DIR / f"{day.isoformat()}.json"
-        if out_path.exists() and day not in always_refresh:
+        if not needs_fetch(out_path, day, always_refresh):
             skipped += 1
             continue
 
-        record = fetch_day(garmin, day)
+        try:
+            record = fetch_day(garmin, day)
+        except DayFetchError as err:
+            failed.append(day.isoformat())
+            auth_failure = auth_failure or err.is_auth
+            consecutive_failures += 1
+            print(f"{day.isoformat()}: BŁĄD, nie zapisano ({err})", file=sys.stderr)
+            if consecutive_failures >= MAX_CONSECUTIVE_DAY_FAILURES:
+                print("Kolejne dni też nie przechodzą - przerywam ten przebieg.", file=sys.stderr)
+                break
+            continue
+        consecutive_failures = 0
         out_path.write_text(
             json.dumps(record, indent=2, ensure_ascii=False, default=str),
             encoding="utf-8",
         )
         fetched += 1
-        print(f"{day.isoformat()}: zapisano")
+        print(f"{day.isoformat()}: zapisano" + (" (niepełne)" if record["incomplete"] else ""))
         time.sleep(PAUSE_BETWEEN_DAYS_SECONDS)
 
-    print(f"\nGotowe. Pobrano {fetched} dni, pominięto {skipped} dni (już zapisane).")
+    try:
+        save_tokens(garmin)
+    except Exception as err:
+        print(f"Nie udało się zapisać tokenów do {TOKENSTORE}: {err}", file=sys.stderr)
+        sys.exit(1)
+
+    if failed:
+        print(
+            f"Nie pobrano {len(failed)} dni ({', '.join(failed)}); zapisano {fetched}.",
+            file=sys.stderr,
+        )
+        sys.exit(EXIT_AUTH if auth_failure else EXIT_NETWORK)
+
+    print(f"\nGotowe. Pobrano {fetched} dni, pominięto {skipped} dni (już kompletne).")
 
 
 if __name__ == "__main__":

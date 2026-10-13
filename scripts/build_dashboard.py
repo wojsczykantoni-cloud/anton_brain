@@ -36,10 +36,12 @@ DATA_DIR = REPO_ROOT / "data" / "garmin"
 FOOD_DIR = REPO_ROOT / "data" / "food"
 WEIGHT_PATH = REPO_ROOT / "data" / "weight.json"
 TARGETS_PATH = REPO_ROOT / "data" / "targets.json"
+STATUS_PATH = REPO_ROOT / "data" / "status.json"
 OUT_DIR = REPO_ROOT / "Health"
 OUT_PATH = OUT_DIR / "Health Dashboard.html"
 
 TREND_DAYS = 14
+STALE_AFTER = timedelta(hours=24)
 
 MONTHS_PL_GEN = [
     "stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca",
@@ -142,6 +144,41 @@ def latest_sync_dt(records: list[dict[str, Any]]) -> datetime | None:
         if best is None or dt > best:
             best = dt
     return best
+
+
+def load_garmin_status() -> dict[str, Any]:
+    """The garmin step from data/status.json (written by scripts/status.py)."""
+    try:
+        data = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
+        return dig(data, "steps", "garmin", default={}) or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def build_stale_banner(records: list[dict[str, Any]]) -> str:
+    """Yellow bar when the newest Garmin sync is older than 24 h."""
+    garmin = load_garmin_status()
+    candidates = [latest_sync_dt(records)]
+    try:
+        candidates.append(datetime.strptime(garmin.get("last_success") or "", "%Y-%m-%dT%H:%M:%S"))
+    except ValueError:
+        pass
+    last_ok = max((c for c in candidates if c), default=None)
+    if last_ok and datetime.now() - last_ok <= STALE_AFTER:
+        return ""
+
+    since = last_ok.strftime("%d.%m") if last_ok else "zawsze"
+    if garmin.get("result") == "fail" and garmin.get("message"):
+        reason = garmin["message"]
+    else:
+        reason = "brak udanej synchronizacji (Mac uśpiony lub wyłączony w porach zadań?)"
+    fix = garmin.get("fix") or "cd ~/anton_brain && scripts/refresh_all.sh"
+    return (
+        '<div class="stale-banner" role="alert">'
+        f"<b>Dane nieaktualne od {esc(since)}</b>, powód: {esc(reason)}"
+        f'<br><span class="fix">Naprawa: <code>{esc(fix)}</code></span>'
+        "</div>"
+    )
 
 
 def load_food_records() -> dict[str, dict[str, Any]]:
@@ -941,6 +978,10 @@ CSS = """
   --c-neutral: #7c8ba1;
 
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+
+  --warn-bg: #3a2f0b;
+  --warn-border: #d4a72c;
+  --warn-text: #f5d77a;
 }
 
 @media (prefers-color-scheme: light) {
@@ -954,7 +995,32 @@ CSS = """
     --track: #edeff3;
 
     --shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+
+    --warn-bg: #fff4c2;
+    --warn-border: #d4a72c;
+    --warn-text: #5c4400;
   }
+}
+
+.stale-banner {
+  max-width: 1200px;
+  margin: 12px auto 0;
+  padding: 10px 16px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: 10px;
+  color: var(--warn-text);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.stale-banner .fix {
+  font-size: 0.8rem;
+}
+
+.stale-banner code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -1198,6 +1264,7 @@ def build_html(
     generated = esc(fmt_generated_at())
     sync_dt = latest_sync_dt(records)
     sync_text = esc(fmt_dt_pl(sync_dt)) if sync_dt else "brak danych"
+    stale_banner = build_stale_banner(records)
 
     return f"""<!DOCTYPE html>
 <html lang="pl">
@@ -1208,6 +1275,7 @@ def build_html(
 <style>{CSS}</style>
 </head>
 <body>
+{stale_banner}
 <header>
   <h1>Health Dashboard</h1>
   <p class="meta">Ostatnia synchronizacja danych: <b>{sync_text}</b> &middot; Wygenerowano: {generated}</p>
