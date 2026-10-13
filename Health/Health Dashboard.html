@@ -19,9 +19,9 @@
   --c-rem: #f2b84b;
   --c-awake: #5b6472;
 
-  --c-hrv: #5b9dd9;
   --c-rhr: #e5735a;
   --c-neutral: #7c8ba1;
+  --c-train: #8fa3c4;
 
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 
@@ -269,6 +269,88 @@ main.layout {
 
 .nutrient-value-wide { grid-column: 2 / span 2; text-align: left; }
 
+/* Tabs: CSS-only (radio + label), so they work even with scripts off. */
+.tab-input { position: absolute; opacity: 0; pointer-events: none; }
+
+.tabs {
+  max-width: 1200px;
+  margin: 6px auto 0;
+  padding: 0 20px;
+  display: flex;
+  gap: 6px;
+}
+
+.tabs label {
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+#tab-zdrowie:checked ~ .tabs label[for="tab-zdrowie"],
+#tab-trening:checked ~ .tabs label[for="tab-trening"] {
+  background: var(--bg-card);
+  color: var(--text);
+  border-color: var(--c-neutral);
+}
+
+#tab-zdrowie:focus-visible ~ .tabs label[for="tab-zdrowie"],
+#tab-trening:focus-visible ~ .tabs label[for="tab-trening"] {
+  outline: 2px solid var(--c-neutral);
+  outline-offset: 2px;
+}
+
+main.panel { display: none; }
+#tab-zdrowie:checked ~ .panel-zdrowie,
+#tab-trening:checked ~ .panel-trening { display: grid; }
+
+.panel-meta {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.panel-meta b { color: var(--text); font-weight: 600; }
+
+/* Per-muscle-group horizontal bars with a tick for the baseline average. */
+.mg-bars { display: flex; flex-direction: column; gap: 7px; }
+
+.mg-row { display: grid; grid-template-columns: 96px 1fr 64px; align-items: center; gap: 8px; }
+
+.mg-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mg-track { position: relative; height: 7px; border-radius: 3px; background: var(--track); }
+
+.mg-fill { display: block; height: 100%; border-radius: 3px; background: var(--c-neutral); }
+
+.mg-tick {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 13px;
+  margin-left: -1px;
+  background: var(--text);
+  opacity: 0.7;
+  border-radius: 1px;
+}
+
+.mg-value { font-size: 11px; text-align: right; white-space: nowrap; }
+
+.legend-item i.legend-bar { background: var(--c-neutral); }
+
+.legend-item i.legend-tick { width: 2px; height: 12px; background: var(--text); opacity: 0.7; }
+
 /* Shared by every "no data" state: a short, fixed-height hint (tile stays
    around 90px tall total) instead of a tall padded block. */
 .empty-fill {
@@ -283,12 +365,18 @@ main.layout {
 </style>
 </head>
 <body>
+<input type="radio" name="tab" id="tab-zdrowie" class="tab-input" checked>
+<input type="radio" name="tab" id="tab-trening" class="tab-input">
 
 <header>
   <h1>Health Dashboard</h1>
-  <p class="meta">Ostatnia synchronizacja danych: <b>13 października 2026, 21:04</b> &middot; Wygenerowano: 13 października 2026, 21:04</p>
+  <p class="meta">Ostatnia synchronizacja danych: <b>13 października 2026, 21:04</b> &middot; Wygenerowano: 13 października 2026, 21:15</p>
 </header>
-<main class="layout">
+<nav class="tabs" aria-label="Zakładki">
+  <label for="tab-zdrowie">Zdrowie</label>
+  <label for="tab-trening">Trening</label>
+</nav>
+<main class="layout panel panel-zdrowie">
 <section class="card"><h2>Gotowość (Training Readiness)</h2>
 <div class="readiness-row">
   <div class="ring-col">
@@ -305,18 +393,18 @@ main.layout {
   <div class="factor-bars"><div class="factor-row"><span class="factor-label">Sen</span><span class="factor-track"><span class="factor-fill" style="width:93%;background:#4fb477"></span></span><span class="factor-value">93%</span></div><div class="factor-row"><span class="factor-label">HRV</span><span class="factor-track"><span class="factor-fill" style="width:98%;background:#4fb477"></span></span><span class="factor-value">98%</span></div><div class="factor-row"><span class="factor-label">Historia snu</span><span class="factor-track"><span class="factor-fill" style="width:91%;background:#4fb477"></span></span><span class="factor-value">91%</span></div><div class="factor-row"><span class="factor-label">Stres</span><span class="factor-track"><span class="factor-fill" style="width:90%;background:#4fb477"></span></span><span class="factor-value">90%</span></div><div class="factor-row"><span class="factor-label">Czas regeneracji</span><span class="factor-track"><span class="factor-fill" style="width:94%;background:#4fb477"></span></span><span class="factor-value">94%</span></div><div class="factor-row"><span class="factor-label">Obciążenie</span><span class="factor-track"><span class="factor-fill" style="width:100%;background:#4fb477"></span></span><span class="factor-value">100%</span></div></div>
 </div>
 <p class="tile-desc">Organizm jest w optymalnej formie do treningu. Wszystkie mierzone składowe są w dobrym zakresie.</p>
-</section><section class="card"><h2>HRV — ostatnie 14 nocy</h2>
+</section><section class="card"><h2>Kroki — ostatnie 14 dni</h2>
 <div class="stat-row">
-  <div class="stat-big">102<span class="stat-unit">ms</span></div>
-  <div class="stat-sub">Zbalansowane · baseline 72–118 ms</div>
+  <div class="stat-big">12 208<span class="stat-unit">wczoraj</span></div>
+  <div class="stat-sub">średnio 11 034 / dzień (pełne dni)</div>
 </div>
-<div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres liniowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">66 ms</text><line x1="50" y1="46.0" x2="306" y2="46.0" stroke-width="1" class="grid-line" /><text x="42" y="49.0" font-size="9" class="axis-label" text-anchor="end">95 ms</text><line x1="50" y1="10.0" x2="306" y2="10.0" stroke-width="1" class="grid-line" /><text x="42" y="13.0" font-size="9" class="axis-label" text-anchor="end">124 ms</text><line x1="50" y1="75.0" x2="306" y2="75.0" stroke-width="1.2" stroke-dasharray="3 3" opacity="0.6" class="baseline-line" style="stroke:var(--c-hrv)" /><line x1="50" y1="17.0" x2="306" y2="17.0" stroke-width="1.2" stroke-dasharray="3 3" opacity="0.6" class="baseline-line" style="stroke:var(--c-hrv)" /><polyline points="50.0,41.0 69.7,47.3 89.4,62.4 109.1,67.5 128.8,66.2 148.5,49.8 168.2,54.8 187.8,51.0 207.5,58.6 227.2,52.3 246.9,46.0 266.6,48.5 286.3,44.7 306.0,37.2" fill="none" stroke="var(--c-hrv)" stroke-width="2.5" stroke-linejoin="round" /><circle cx="50.0" cy="41.0" r="3" fill="var(--c-hrv)" /><circle cx="69.7" cy="47.3" r="3" fill="var(--c-hrv)" /><circle cx="89.4" cy="62.4" r="3" fill="var(--c-hrv)" /><circle cx="109.1" cy="67.5" r="3" fill="var(--c-hrv)" /><circle cx="128.8" cy="66.2" r="3" fill="var(--c-hrv)" /><circle cx="148.5" cy="49.8" r="3" fill="var(--c-hrv)" /><circle cx="168.2" cy="54.8" r="3" fill="var(--c-hrv)" /><circle cx="187.8" cy="51.0" r="3" fill="var(--c-hrv)" /><circle cx="207.5" cy="58.6" r="3" fill="var(--c-hrv)" /><circle cx="227.2" cy="52.3" r="3" fill="var(--c-hrv)" /><circle cx="246.9" cy="46.0" r="3" fill="var(--c-hrv)" /><circle cx="266.6" cy="48.5" r="3" fill="var(--c-hrv)" /><circle cx="286.3" cy="44.7" r="3" fill="var(--c-hrv)" /><circle cx="306.0" cy="37.2" r="3" fill="var(--c-hrv)" /><text x="50.0" y="96" font-size="9" class="axis-label" text-anchor="middle">30.09</text><text x="168.2" y="96" font-size="9" class="axis-label" text-anchor="middle">06.10</text><text x="306.0" y="96" font-size="9" class="axis-label" text-anchor="middle">13.10</text></svg></div>
+<div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres słupkowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">0</text><line x1="50" y1="49.9" x2="306" y2="49.9" stroke-width="1" class="grid-line" /><text x="42" y="52.9" font-size="9" class="axis-label" text-anchor="end">7500</text><line x1="50" y1="17.7" x2="306" y2="17.7" stroke-width="1" class="grid-line" /><text x="42" y="20.7" font-size="9" class="axis-label" text-anchor="end">15000</text><rect x="53.7" y="25.8" width="11.0" height="56.2" rx="2" fill="var(--c-neutral)" /><text x="59.1" y="96" font-size="9" class="axis-label" text-anchor="middle">30.09</text><rect x="71.9" y="38.9" width="11.0" height="43.1" rx="2" fill="var(--c-neutral)" /><text x="77.4" y="34.9" font-size="9" class="axis-label" text-anchor="middle">10051</text><rect x="90.2" y="38.6" width="11.0" height="43.4" rx="2" fill="var(--c-neutral)" /><rect x="108.5" y="32.2" width="11.0" height="49.8" rx="2" fill="var(--c-neutral)" /><text x="114.0" y="28.2" font-size="9" class="axis-label" text-anchor="middle">11625</text><rect x="126.8" y="20.7" width="11.0" height="61.3" rx="2" fill="var(--c-neutral)" /><rect x="145.1" y="26.0" width="11.0" height="56.0" rx="2" fill="var(--c-neutral)" /><text x="150.6" y="22.0" font-size="9" class="axis-label" text-anchor="middle">13078</text><rect x="163.4" y="42.1" width="11.0" height="39.9" rx="2" fill="var(--c-neutral)" /><text x="168.9" y="96" font-size="9" class="axis-label" text-anchor="middle">06.10</text><rect x="181.7" y="32.3" width="11.0" height="49.7" rx="2" fill="var(--c-neutral)" /><text x="187.1" y="28.3" font-size="9" class="axis-label" text-anchor="middle">11594</text><rect x="199.9" y="44.0" width="11.0" height="38.0" rx="2" fill="var(--c-neutral)" /><rect x="218.2" y="42.0" width="11.0" height="40.0" rx="2" fill="var(--c-neutral)" /><text x="223.7" y="38.0" font-size="9" class="axis-label" text-anchor="middle">9326</text><rect x="236.5" y="34.9" width="11.0" height="47.1" rx="2" fill="var(--c-neutral)" /><rect x="254.8" y="44.1" width="11.0" height="37.9" rx="2" fill="var(--c-neutral)" /><text x="260.3" y="40.1" font-size="9" class="axis-label" text-anchor="middle">8842</text><rect x="273.1" y="29.7" width="11.0" height="52.3" rx="2" fill="var(--c-neutral)" /><rect x="291.4" y="35.8" width="11.0" height="46.2" rx="2" fill="var(--c-neutral)" /><text x="296.9" y="31.8" font-size="9" class="axis-label" text-anchor="middle">10788</text><text x="296.9" y="96" font-size="9" class="axis-label" text-anchor="middle">13.10</text></svg></div>
 </section><section class="card"><h2>Tętno spoczynkowe — ostatnie 14 nocy</h2>
 <div class="stat-row">
   <div class="stat-big">46<span class="stat-unit">bpm</span></div>
   <div class="stat-sub">&nbsp;</div>
 </div>
-<div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres liniowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">42 bpm</text><line x1="50" y1="46.0" x2="306" y2="46.0" stroke-width="1" class="grid-line" /><text x="42" y="49.0" font-size="9" class="axis-label" text-anchor="end">46 bpm</text><line x1="50" y1="10.0" x2="306" y2="10.0" stroke-width="1" class="grid-line" /><text x="42" y="13.0" font-size="9" class="axis-label" text-anchor="end">50 bpm</text><polyline points="50.0,46.0 69.7,36.3 89.4,17.0 109.1,17.0 128.8,36.3 148.5,75.0 168.2,46.0 187.8,46.0 207.5,55.7 227.2,55.7 246.9,55.7 266.6,55.7 286.3,65.4 306.0,46.0" fill="none" stroke="var(--c-rhr)" stroke-width="2.5" stroke-linejoin="round" /><circle cx="50.0" cy="46.0" r="3" fill="var(--c-rhr)" /><circle cx="69.7" cy="36.3" r="3" fill="var(--c-rhr)" /><circle cx="89.4" cy="17.0" r="3" fill="var(--c-rhr)" /><circle cx="109.1" cy="17.0" r="3" fill="var(--c-rhr)" /><circle cx="128.8" cy="36.3" r="3" fill="var(--c-rhr)" /><circle cx="148.5" cy="75.0" r="3" fill="var(--c-rhr)" /><circle cx="168.2" cy="46.0" r="3" fill="var(--c-rhr)" /><circle cx="187.8" cy="46.0" r="3" fill="var(--c-rhr)" /><circle cx="207.5" cy="55.7" r="3" fill="var(--c-rhr)" /><circle cx="227.2" cy="55.7" r="3" fill="var(--c-rhr)" /><circle cx="246.9" cy="55.7" r="3" fill="var(--c-rhr)" /><circle cx="266.6" cy="55.7" r="3" fill="var(--c-rhr)" /><circle cx="286.3" cy="65.4" r="3" fill="var(--c-rhr)" /><circle cx="306.0" cy="46.0" r="3" fill="var(--c-rhr)" /><text x="50.0" y="96" font-size="9" class="axis-label" text-anchor="middle">30.09</text><text x="168.2" y="96" font-size="9" class="axis-label" text-anchor="middle">06.10</text><text x="306.0" y="96" font-size="9" class="axis-label" text-anchor="middle">13.10</text></svg></div>
+<div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres liniowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">42 bpm</text><line x1="50" y1="46.0" x2="306" y2="46.0" stroke-width="1" class="grid-line" /><text x="42" y="49.0" font-size="9" class="axis-label" text-anchor="end">46 bpm</text><line x1="50" y1="10.0" x2="306" y2="10.0" stroke-width="1" class="grid-line" /><text x="42" y="13.0" font-size="9" class="axis-label" text-anchor="end">50 bpm</text><polyline points="50.0,46.0 69.7,36.3 89.4,17.0 109.1,17.0 128.8,36.3 148.5,75.0 168.2,46.0 187.8,46.0 207.5,55.7 227.2,55.7 246.9,55.7 266.6,55.7 286.3,65.4 306.0,46.0" fill="none" stroke="var(--c-rhr)" stroke-width="2.5" stroke-linejoin="round" /><circle cx="50.0" cy="46.0" r="3" fill="var(--c-rhr)"></circle><circle cx="69.7" cy="36.3" r="3" fill="var(--c-rhr)"></circle><circle cx="89.4" cy="17.0" r="3" fill="var(--c-rhr)"></circle><circle cx="109.1" cy="17.0" r="3" fill="var(--c-rhr)"></circle><circle cx="128.8" cy="36.3" r="3" fill="var(--c-rhr)"></circle><circle cx="148.5" cy="75.0" r="3" fill="var(--c-rhr)"></circle><circle cx="168.2" cy="46.0" r="3" fill="var(--c-rhr)"></circle><circle cx="187.8" cy="46.0" r="3" fill="var(--c-rhr)"></circle><circle cx="207.5" cy="55.7" r="3" fill="var(--c-rhr)"></circle><circle cx="227.2" cy="55.7" r="3" fill="var(--c-rhr)"></circle><circle cx="246.9" cy="55.7" r="3" fill="var(--c-rhr)"></circle><circle cx="266.6" cy="55.7" r="3" fill="var(--c-rhr)"></circle><circle cx="286.3" cy="65.4" r="3" fill="var(--c-rhr)"></circle><circle cx="306.0" cy="46.0" r="3" fill="var(--c-rhr)"></circle><text x="50.0" y="96" font-size="9" class="axis-label" text-anchor="middle">30.09</text><text x="168.2" y="96" font-size="9" class="axis-label" text-anchor="middle">06.10</text><text x="306.0" y="96" font-size="9" class="axis-label" text-anchor="middle">13.10</text></svg></div>
 </section><section class="card"><h2>Sen — ostatnia noc (13.10)</h2>
 <div class="stat-row">
   <div class="stat-big">6h 59m</div>
@@ -334,8 +422,39 @@ main.layout {
   <div class="stat-big">86.1<span class="stat-unit">kg</span></div>
   <div class="stat-sub">-1.5 kg / 7 dni</div>
 </div>
-<div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres liniowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">85.4 kg</text><line x1="50" y1="46.0" x2="306" y2="46.0" stroke-width="1" class="grid-line" /><text x="42" y="49.0" font-size="9" class="axis-label" text-anchor="end">89.2 kg</text><line x1="50" y1="10.0" x2="306" y2="10.0" stroke-width="1" class="grid-line" /><text x="42" y="13.0" font-size="9" class="axis-label" text-anchor="end">92.9 kg</text><polyline points="50.0,17.0 92.7,55.0 135.3,51.2 178.0,63.6 220.7,46.5 263.3,60.8 306.0,75.0" fill="none" stroke="var(--c-neutral)" stroke-width="2.5" stroke-linejoin="round" /><circle cx="50.0" cy="17.0" r="3" fill="var(--c-neutral)" /><circle cx="92.7" cy="55.0" r="3" fill="var(--c-neutral)" /><circle cx="135.3" cy="51.2" r="3" fill="var(--c-neutral)" /><circle cx="178.0" cy="63.6" r="3" fill="var(--c-neutral)" /><circle cx="220.7" cy="46.5" r="3" fill="var(--c-neutral)" /><circle cx="263.3" cy="60.8" r="3" fill="var(--c-neutral)" /><circle cx="306.0" cy="75.0" r="3" fill="var(--c-neutral)" /><text x="50.0" y="96" font-size="9" class="axis-label" text-anchor="middle">28.09</text><text x="178.0" y="96" font-size="9" class="axis-label" text-anchor="middle">01.10</text><text x="306.0" y="96" font-size="9" class="axis-label" text-anchor="middle">10.10</text></svg></div>
+<div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres liniowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">85.4 kg</text><line x1="50" y1="46.0" x2="306" y2="46.0" stroke-width="1" class="grid-line" /><text x="42" y="49.0" font-size="9" class="axis-label" text-anchor="end">89.2 kg</text><line x1="50" y1="10.0" x2="306" y2="10.0" stroke-width="1" class="grid-line" /><text x="42" y="13.0" font-size="9" class="axis-label" text-anchor="end">92.9 kg</text><polyline points="50.0,17.0 92.7,55.0 135.3,51.2 178.0,63.6 220.7,46.5 263.3,60.8 306.0,75.0" fill="none" stroke="var(--c-neutral)" stroke-width="2.5" stroke-linejoin="round" /><circle cx="50.0" cy="17.0" r="3" fill="var(--c-neutral)"></circle><circle cx="92.7" cy="55.0" r="3" fill="var(--c-neutral)"></circle><circle cx="135.3" cy="51.2" r="3" fill="var(--c-neutral)"></circle><circle cx="178.0" cy="63.6" r="3" fill="var(--c-neutral)"></circle><circle cx="220.7" cy="46.5" r="3" fill="var(--c-neutral)"></circle><circle cx="263.3" cy="60.8" r="3" fill="var(--c-neutral)"></circle><circle cx="306.0" cy="75.0" r="3" fill="var(--c-neutral)"></circle><text x="50.0" y="96" font-size="9" class="axis-label" text-anchor="middle">28.09</text><text x="178.0" y="96" font-size="9" class="axis-label" text-anchor="middle">01.10</text><text x="306.0" y="96" font-size="9" class="axis-label" text-anchor="middle">10.10</text></svg></div>
 </section><section class="card"><h2>Kalorie — ostatnie 14 dni</h2><div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres słupkowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">0 kcal</text><line x1="50" y1="49.9" x2="306" y2="49.9" stroke-width="1" class="grid-line" /><text x="42" y="52.9" font-size="9" class="axis-label" text-anchor="end">1500 kcal</text><line x1="50" y1="17.7" x2="306" y2="17.7" stroke-width="1" class="grid-line" /><text x="42" y="20.7" font-size="9" class="axis-label" text-anchor="end">3000 kcal</text><line x1="50" y1="26.1" x2="306" y2="26.1" stroke-width="1.5" stroke-dasharray="4 3" class="target-line" /><rect x="53.7" y="26.2" width="11.0" height="55.8" rx="2" fill="var(--c-neutral)" /><text x="59.1" y="96" font-size="9" class="axis-label" text-anchor="middle">30.09</text><rect x="71.9" y="25.5" width="11.0" height="56.5" rx="2" fill="var(--c-neutral)" /><text x="77.4" y="18.1" font-size="9" class="axis-label" text-anchor="middle">2637</text><rect x="90.2" y="25.3" width="11.0" height="56.7" rx="2" fill="var(--c-neutral)" /><rect x="108.5" y="26.3" width="11.0" height="55.7" rx="2" fill="var(--c-neutral)" /><text x="114.0" y="18.1" font-size="9" class="axis-label" text-anchor="middle">2599</text><rect x="126.8" y="26.0" width="11.0" height="56.0" rx="2" fill="var(--c-neutral)" /><rect x="145.1" y="26.1" width="11.0" height="55.9" rx="2" fill="var(--c-neutral)" /><text x="150.6" y="18.1" font-size="9" class="axis-label" text-anchor="middle">2610</text><rect x="163.4" y="25.3" width="11.0" height="56.7" rx="2" fill="var(--c-neutral)" /><text x="168.9" y="96" font-size="9" class="axis-label" text-anchor="middle">06.10</text><rect x="181.7" y="26.4" width="11.0" height="55.6" rx="2" fill="var(--c-neutral)" /><text x="187.1" y="18.1" font-size="9" class="axis-label" text-anchor="middle">2594</text><rect x="199.9" y="26.6" width="11.0" height="55.4" rx="2" fill="var(--c-neutral)" /><rect x="218.2" y="26.2" width="11.0" height="55.8" rx="2" fill="var(--c-neutral)" /><text x="223.7" y="18.1" font-size="9" class="axis-label" text-anchor="middle">2606</text><rect x="236.5" y="25.3" width="11.0" height="56.7" rx="2" fill="var(--c-neutral)" /><rect x="254.8" y="26.8" width="11.0" height="55.2" rx="2" fill="var(--c-neutral)" /><text x="260.3" y="18.1" font-size="9" class="axis-label" text-anchor="middle">2576</text><rect x="273.1" y="26.1" width="11.0" height="55.9" rx="2" fill="var(--c-neutral)" /><rect x="291.4" y="26.1" width="11.0" height="55.9" rx="2" fill="var(--c-neutral)" /><text x="296.9" y="18.1" font-size="9" class="axis-label" text-anchor="middle">2609</text><text x="296.9" y="96" font-size="9" class="axis-label" text-anchor="middle">13.10</text></svg></div></section><section class="card"><h2>Białko — ostatnie 14 dni</h2><div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres słupkowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">0 g</text><line x1="50" y1="49.9" x2="306" y2="49.9" stroke-width="1" class="grid-line" /><text x="42" y="52.9" font-size="9" class="axis-label" text-anchor="end">150 g</text><line x1="50" y1="17.7" x2="306" y2="17.7" stroke-width="1" class="grid-line" /><text x="42" y="20.7" font-size="9" class="axis-label" text-anchor="end">300 g</text><line x1="50" y1="39.1" x2="306" y2="39.1" stroke-width="1.5" stroke-dasharray="4 3" class="target-line" /><rect x="53.7" y="37.6" width="11.0" height="44.4" rx="2" fill="var(--c-neutral)" /><text x="59.1" y="96" font-size="9" class="axis-label" text-anchor="middle">30.09</text><rect x="71.9" y="36.6" width="11.0" height="45.4" rx="2" fill="var(--c-neutral)" /><text x="77.4" y="31.1" font-size="9" class="axis-label" text-anchor="middle">212</text><rect x="90.2" y="41.3" width="11.0" height="40.7" rx="2" fill="var(--c-neutral)" /><rect x="108.5" y="39.6" width="11.0" height="42.4" rx="2" fill="var(--c-neutral)" /><text x="114.0" y="31.1" font-size="9" class="axis-label" text-anchor="middle">198</text><rect x="126.8" y="41.1" width="11.0" height="40.9" rx="2" fill="var(--c-neutral)" /><rect x="145.1" y="39.4" width="11.0" height="42.6" rx="2" fill="var(--c-neutral)" /><text x="150.6" y="31.1" font-size="9" class="axis-label" text-anchor="middle">199</text><rect x="163.4" y="39.4" width="11.0" height="42.6" rx="2" fill="var(--c-neutral)" /><text x="168.9" y="96" font-size="9" class="axis-label" text-anchor="middle">06.10</text><rect x="181.7" y="37.4" width="11.0" height="44.6" rx="2" fill="var(--c-neutral)" /><text x="187.1" y="31.1" font-size="9" class="axis-label" text-anchor="middle">208</text><rect x="199.9" y="32.9" width="11.0" height="49.1" rx="2" fill="var(--c-neutral)" /><rect x="218.2" y="33.8" width="11.0" height="48.2" rx="2" fill="var(--c-neutral)" /><text x="223.7" y="29.8" font-size="9" class="axis-label" text-anchor="middle">225</text><rect x="236.5" y="40.2" width="11.0" height="41.8" rx="2" fill="var(--c-neutral)" /><rect x="254.8" y="41.3" width="11.0" height="40.7" rx="2" fill="var(--c-neutral)" /><text x="260.3" y="31.1" font-size="9" class="axis-label" text-anchor="middle">190</text><rect x="273.1" y="37.6" width="11.0" height="44.4" rx="2" fill="var(--c-neutral)" /><rect x="291.4" y="38.1" width="11.0" height="43.9" rx="2" fill="var(--c-neutral)" /><text x="296.9" y="31.1" font-size="9" class="axis-label" text-anchor="middle">205</text><text x="296.9" y="96" font-size="9" class="axis-label" text-anchor="middle">13.10</text></svg></div></section><section class="card"><h2>Węgle — ostatnie 14 dni</h2><div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres słupkowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">0 g</text><line x1="50" y1="49.9" x2="306" y2="49.9" stroke-width="1" class="grid-line" /><text x="42" y="52.9" font-size="9" class="axis-label" text-anchor="end">200 g</text><line x1="50" y1="17.7" x2="306" y2="17.7" stroke-width="1" class="grid-line" /><text x="42" y="20.7" font-size="9" class="axis-label" text-anchor="end">400 g</text><line x1="50" y1="34.6" x2="306" y2="34.6" stroke-width="1.5" stroke-dasharray="4 3" class="target-line" /><rect x="53.7" y="36.8" width="11.0" height="45.2" rx="2" fill="var(--c-neutral)" /><text x="59.1" y="96" font-size="9" class="axis-label" text-anchor="middle">30.09</text><rect x="71.9" y="35.4" width="11.0" height="46.6" rx="2" fill="var(--c-neutral)" /><text x="77.4" y="26.6" font-size="9" class="axis-label" text-anchor="middle">290</text><rect x="90.2" y="43.9" width="11.0" height="38.1" rx="2" fill="var(--c-neutral)" /><rect x="108.5" y="35.9" width="11.0" height="46.1" rx="2" fill="var(--c-neutral)" /><text x="114.0" y="26.6" font-size="9" class="axis-label" text-anchor="middle">287</text><rect x="126.8" y="42.6" width="11.0" height="39.4" rx="2" fill="var(--c-neutral)" /><rect x="145.1" y="35.4" width="11.0" height="46.6" rx="2" fill="var(--c-neutral)" /><text x="150.6" y="26.6" font-size="9" class="axis-label" text-anchor="middle">290</text><rect x="163.4" y="35.4" width="11.0" height="46.6" rx="2" fill="var(--c-neutral)" /><text x="168.9" y="96" font-size="9" class="axis-label" text-anchor="middle">06.10</text><rect x="181.7" y="35.4" width="11.0" height="46.6" rx="2" fill="var(--c-neutral)" /><text x="187.1" y="26.6" font-size="9" class="axis-label" text-anchor="middle">290</text><rect x="199.9" y="37.6" width="11.0" height="44.4" rx="2" fill="var(--c-neutral)" /><rect x="218.2" y="39.3" width="11.0" height="42.7" rx="2" fill="var(--c-neutral)" /><text x="223.7" y="26.6" font-size="9" class="axis-label" text-anchor="middle">266</text><rect x="236.5" y="31.7" width="11.0" height="50.3" rx="2" fill="var(--c-neutral)" /><rect x="254.8" y="32.2" width="11.0" height="49.8" rx="2" fill="var(--c-neutral)" /><text x="260.3" y="26.6" font-size="9" class="axis-label" text-anchor="middle">310</text><rect x="273.1" y="35.4" width="11.0" height="46.6" rx="2" fill="var(--c-neutral)" /><rect x="291.4" y="45.0" width="11.0" height="37.0" rx="2" fill="var(--c-neutral)" /><text x="296.9" y="26.6" font-size="9" class="axis-label" text-anchor="middle">230</text><text x="296.9" y="96" font-size="9" class="axis-label" text-anchor="middle">13.10</text></svg></div></section>
 </main>
+<main class="layout panel panel-trening">
+<p class="panel-meta">Treningów w danych: <b>0</b></p><section class="card"><h2>Brak treningów z Hevy</h2><div class="empty-fill"><p class="empty-msg">Dodaj HEVY_API_KEY do .env (hevy.com/settings?developer, wymaga Hevy Pro) i uruchom scripts/refresh_all.sh.</p></div></section><section class="card"><h2>Kroki — ostatnie 14 dni</h2>
+<div class="stat-row">
+  <div class="stat-big">12 208<span class="stat-unit">wczoraj</span></div>
+  <div class="stat-sub">średnio 11 034 / dzień (pełne dni)</div>
+</div>
+<div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres słupkowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">0</text><line x1="50" y1="49.9" x2="306" y2="49.9" stroke-width="1" class="grid-line" /><text x="42" y="52.9" font-size="9" class="axis-label" text-anchor="end">7500</text><line x1="50" y1="17.7" x2="306" y2="17.7" stroke-width="1" class="grid-line" /><text x="42" y="20.7" font-size="9" class="axis-label" text-anchor="end">15000</text><rect x="53.7" y="25.8" width="11.0" height="56.2" rx="2" fill="var(--c-neutral)" /><text x="59.1" y="96" font-size="9" class="axis-label" text-anchor="middle">30.09</text><rect x="71.9" y="38.9" width="11.0" height="43.1" rx="2" fill="var(--c-neutral)" /><text x="77.4" y="34.9" font-size="9" class="axis-label" text-anchor="middle">10051</text><rect x="90.2" y="38.6" width="11.0" height="43.4" rx="2" fill="var(--c-neutral)" /><rect x="108.5" y="32.2" width="11.0" height="49.8" rx="2" fill="var(--c-neutral)" /><text x="114.0" y="28.2" font-size="9" class="axis-label" text-anchor="middle">11625</text><rect x="126.8" y="20.7" width="11.0" height="61.3" rx="2" fill="var(--c-neutral)" /><rect x="145.1" y="26.0" width="11.0" height="56.0" rx="2" fill="var(--c-neutral)" /><text x="150.6" y="22.0" font-size="9" class="axis-label" text-anchor="middle">13078</text><rect x="163.4" y="42.1" width="11.0" height="39.9" rx="2" fill="var(--c-neutral)" /><text x="168.9" y="96" font-size="9" class="axis-label" text-anchor="middle">06.10</text><rect x="181.7" y="32.3" width="11.0" height="49.7" rx="2" fill="var(--c-neutral)" /><text x="187.1" y="28.3" font-size="9" class="axis-label" text-anchor="middle">11594</text><rect x="199.9" y="44.0" width="11.0" height="38.0" rx="2" fill="var(--c-neutral)" /><rect x="218.2" y="42.0" width="11.0" height="40.0" rx="2" fill="var(--c-neutral)" /><text x="223.7" y="38.0" font-size="9" class="axis-label" text-anchor="middle">9326</text><rect x="236.5" y="34.9" width="11.0" height="47.1" rx="2" fill="var(--c-neutral)" /><rect x="254.8" y="44.1" width="11.0" height="37.9" rx="2" fill="var(--c-neutral)" /><text x="260.3" y="40.1" font-size="9" class="axis-label" text-anchor="middle">8842</text><rect x="273.1" y="29.7" width="11.0" height="52.3" rx="2" fill="var(--c-neutral)" /><rect x="291.4" y="35.8" width="11.0" height="46.2" rx="2" fill="var(--c-neutral)" /><text x="296.9" y="31.8" font-size="9" class="axis-label" text-anchor="middle">10788</text><text x="296.9" y="96" font-size="9" class="axis-label" text-anchor="middle">13.10</text></svg></div>
+</section><section class="card"><h2>Waga (10.10)</h2>
+<div class="stat-row">
+  <div class="stat-big">86.1<span class="stat-unit">kg</span></div>
+  <div class="stat-sub">-1.5 kg / 7 dni</div>
+</div>
+<div class="chart-wrap"><svg width="100%" height="100" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet" class="chart" role="img" aria-label="Wykres liniowy"><line x1="50" y1="82.0" x2="306" y2="82.0" stroke-width="1" class="grid-line" /><text x="42" y="85.0" font-size="9" class="axis-label" text-anchor="end">85.4 kg</text><line x1="50" y1="46.0" x2="306" y2="46.0" stroke-width="1" class="grid-line" /><text x="42" y="49.0" font-size="9" class="axis-label" text-anchor="end">89.2 kg</text><line x1="50" y1="10.0" x2="306" y2="10.0" stroke-width="1" class="grid-line" /><text x="42" y="13.0" font-size="9" class="axis-label" text-anchor="end">92.9 kg</text><polyline points="50.0,17.0 92.7,55.0 135.3,51.2 178.0,63.6 220.7,46.5 263.3,60.8 306.0,75.0" fill="none" stroke="var(--c-neutral)" stroke-width="2.5" stroke-linejoin="round" /><circle cx="50.0" cy="17.0" r="3" fill="var(--c-neutral)"></circle><circle cx="92.7" cy="55.0" r="3" fill="var(--c-neutral)"></circle><circle cx="135.3" cy="51.2" r="3" fill="var(--c-neutral)"></circle><circle cx="178.0" cy="63.6" r="3" fill="var(--c-neutral)"></circle><circle cx="220.7" cy="46.5" r="3" fill="var(--c-neutral)"></circle><circle cx="263.3" cy="60.8" r="3" fill="var(--c-neutral)"></circle><circle cx="306.0" cy="75.0" r="3" fill="var(--c-neutral)"></circle><text x="50.0" y="96" font-size="9" class="axis-label" text-anchor="middle">28.09</text><text x="178.0" y="96" font-size="9" class="axis-label" text-anchor="middle">01.10</text><text x="306.0" y="96" font-size="9" class="axis-label" text-anchor="middle">10.10</text></svg></div>
+</section>
+</main>
+<script>
+// Obsidian reloads the file after every rebuild - keep the chosen tab.
+(function () {
+  var KEY = "health-dashboard-tab";
+  try {
+    var saved = localStorage.getItem(KEY);
+    var el = saved && document.getElementById(saved);
+    if (el) el.checked = true;
+  } catch (e) {}
+  document.querySelectorAll(".tab-input").forEach(function (input) {
+    input.addEventListener("change", function () {
+      try { localStorage.setItem(KEY, input.id); } catch (e) {}
+    });
+  });
+})();
+</script>
 </body>
 </html>
