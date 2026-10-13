@@ -36,6 +36,7 @@ ENV_PATH = REPO_ROOT / ".env"
 STEP_LABELS = {
     "network": "Sieć",
     "garmin": "Garmin",
+    "hevy": "Hevy",
     "waga": "Waga",
     "dashboard": "Dashboard",
     "morning_brief": "Morning brief",

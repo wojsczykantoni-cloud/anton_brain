@@ -63,6 +63,7 @@ const GARMIN_DIR = path.join(__dirname, 'data', 'garmin');
 const LAUNCHD_LABELS = ['garminsync', 'morningbrief', 'telegrambot', 'botwatchdog'];
 const STEP_LABELS = {
   garmin: 'Garmin',
+  hevy: 'Hevy',
   waga: 'Waga',
   dashboard: 'Dashboard',
   morning_brief: 'Morning brief',

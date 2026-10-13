@@ -1,5 +1,5 @@
 #!/bin/bash
-# Jeden przebieg aktualizacji: Garmin -> waga -> dashboard.
+# Jeden przebieg aktualizacji: Garmin -> Hevy -> waga -> dashboard.
 # Wywoływany przez launchd (com.antonbrain.garminsync) o 11:20, 15:30, 21:00,
 # przy logowaniu (RunAtLoad) i po wybudzeniu Maca, jeśli termin wypadł we śnie.
 # Wynik każdego kroku trafia do data/status.json; przy awarii idzie alert na
@@ -23,8 +23,11 @@ FAILED=0
 
 log "=== Start refresh_all"
 
+NET_OK=0
+wait_for_network 120 && NET_OK=1
+
 # 1. Garmin (nadrabia brakujące i niepełne dni z ostatnich 30+).
-if wait_for_network 120; then
+if [ $NET_OK -eq 1 ]; then
   run_logged "$OUT" "$PY" scripts/garmin_sync.py
   rc=$?
   case $rc in
@@ -37,7 +40,22 @@ else
   FAILED=1
 fi
 
-# 2. Waga - pusty lub niepoprawny waga.txt to "brak pomiaru", nie błąd (exit 0).
+# 2. Hevy (inkrementalnie przez /workouts/events; brak klucza = pominięcie).
+if [ $NET_OK -eq 1 ]; then
+  run_logged "$OUT" "$PY" scripts/hevy_sync.py
+  rc=$?
+  case $rc in
+    0) status_set hevy ok "$(last_line "$OUT")" ;;
+    4) status_set hevy skip "$(last_line "$OUT")" ;;
+    2) status_set hevy fail "$(last_line "$OUT")" --fix "Sprawdź HEVY_API_KEY w ~/anton_brain/.env (hevy.com/settings?developer, wymaga Pro), potem: cd ~/anton_brain && scripts/refresh_all.sh"; FAILED=1 ;;
+    *) status_set hevy fail "$(last_line "$OUT")" --fix "$FIX_RUN"; FAILED=1 ;;
+  esac
+else
+  status_set hevy fail "Brak sieci/DNS przez 2 min" --fix "$FIX_RUN"
+  FAILED=1
+fi
+
+# 3. Waga - pusty lub niepoprawny waga.txt to "brak pomiaru", nie błąd (exit 0).
 run_logged "$OUT" "$PY" scripts/import_waga.py
 if [ $? -eq 0 ]; then
   status_set waga ok "$(last_line "$OUT")"
@@ -46,7 +64,7 @@ else
   FAILED=1
 fi
 
-# 3. Dashboard - zawsze, także po awarii Garmina (pokaże pasek "Dane nieaktualne").
+# 4. Dashboard - zawsze, także po awarii Garmina (pokaże pasek "Dane nieaktualne").
 run_logged "$OUT" "$PY" scripts/build_dashboard.py
 if [ $? -eq 0 ]; then
   status_set dashboard ok "$(last_line "$OUT")"
