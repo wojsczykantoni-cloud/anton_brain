@@ -5,7 +5,8 @@ Usage (from repo root, using the project venv):
 
     .venv/bin/python scripts/build_dashboard.py
 
-Reads every daily JSON file written by scripts/garmin_sync.py, plus
+Reads every daily JSON file written by scripts/garmin_sync.py, the Hevy
+workouts written by scripts/hevy_sync.py (data/hevy/), plus
 data/food/*.json, data/weight.json and data/targets.json written by the
 Telegram bot's /dzien, /waga and /cel commands. Generates a single
 standalone HTML file at "Health/Health Dashboard.html" with inline SVG
@@ -14,13 +15,21 @@ by default, switching to a light theme when the system prefers light
 (prefers-color-scheme). Days with missing data are rendered as gaps,
 never errors; a missing data/targets.json simply omits target lines.
 
-3-column grid. Row 1: Training Readiness ring + per-factor bars (only the
-factors actually present in the data) with a rule-based Polish summary,
-HRV trend, resting heart rate trend. Row 2: last night's sleep (duration,
-start/end times, score, phase bar), yesterday's nutrition vs. target,
-weight trend. Row 3: 14-day calorie/protein/carb bar charts with a
-dashed target line. Colors are neutral throughout the nutrition/weight
-tiles - no good/bad judgment, just numbers.
+Two tabs (CSS-only radio tabs; a tiny script remembers the last one across
+Obsidian's auto-reloads). "Zdrowie", 3-column grid. Row 1: Training
+Readiness ring + per-factor bars (only the factors actually present in the
+data) with a rule-based Polish summary, 14-day steps, resting heart rate
+trend. Row 2: last night's sleep (duration, start/end times, score, phase
+bar), yesterday's nutrition vs. target, weight trend. Row 3: 14-day
+calorie/protein/carb bar charts with a dashed target line.
+
+"Trening" (from Hevy): workouts per week (12 weeks), weekly volume (kg) and
+working sets per muscle group (last 7 days vs. the average of the 4 previous
+7-day windows), best set (weight x reps) over time in the 5 most frequent
+weighted exercises, plus steps and weight. Working sets = every set except
+warm-ups; volume = weight x reps; each exercise counts toward its primary
+muscle group only. Colors are neutral throughout the nutrition, weight and
+training tiles - no good/bad judgment, just numbers.
 """
 
 from __future__ import annotations
@@ -37,6 +46,8 @@ FOOD_DIR = REPO_ROOT / "data" / "food"
 WEIGHT_PATH = REPO_ROOT / "data" / "weight.json"
 TARGETS_PATH = REPO_ROOT / "data" / "targets.json"
 STATUS_PATH = REPO_ROOT / "data" / "status.json"
+HEVY_WORKOUTS_DIR = REPO_ROOT / "data" / "hevy" / "workouts"
+HEVY_TEMPLATES_PATH = REPO_ROOT / "data" / "hevy" / "exercise_templates.json"
 OUT_DIR = REPO_ROOT / "Health"
 OUT_PATH = OUT_DIR / "Health Dashboard.html"
 
@@ -55,11 +66,34 @@ SLEEP_QUALIFIER_PL = {
     "POOR": "Słaby",
 }
 
-HRV_STATUS_PL = {
-    "BALANCED": "Zbalansowane",
-    "UNBALANCED": "Niezbalansowane",
-    "LOW": "Niskie",
-    "POOR": "Słabe",
+TRAINING_WEEKS = 12
+VOLUME_WINDOW_DAYS = 7
+VOLUME_BASELINE_WINDOWS = 4
+PROGRESS_EXERCISES = 5
+PROGRESS_LOOKBACK_DAYS = 90
+PROGRESS_MAX_POINTS = 16
+
+MUSCLE_GROUP_PL = {
+    "chest": "Klatka",
+    "lats": "Najszersze",
+    "upper_back": "Górne plecy",
+    "lower_back": "Dolne plecy",
+    "traps": "Kaptury",
+    "shoulders": "Barki",
+    "biceps": "Biceps",
+    "triceps": "Triceps",
+    "forearms": "Przedramiona",
+    "quadriceps": "Czworogłowe",
+    "hamstrings": "Dwugłowe ud",
+    "glutes": "Pośladki",
+    "calves": "Łydki",
+    "abductors": "Odwodziciele",
+    "adductors": "Przywodziciele",
+    "abdominals": "Brzuch",
+    "neck": "Szyja",
+    "full_body": "Całe ciało",
+    "cardio": "Cardio",
+    "other": "Inne",
 }
 
 READINESS_LEVEL_PL = {
@@ -179,6 +213,46 @@ def build_stale_banner(records: list[dict[str, Any]]) -> str:
         f'<br><span class="fix">Naprawa: <code>{esc(fix)}</code></span>'
         "</div>"
     )
+
+
+def load_hevy_workouts() -> list[dict[str, Any]]:
+    """Hevy workouts sorted by start, each with a local "_date" and "_sets":
+    a flat list of working (non-warm-up) sets tagged with exercise and
+    primary muscle group."""
+    if not HEVY_WORKOUTS_DIR.exists():
+        return []
+    try:
+        templates = json.loads(HEVY_TEMPLATES_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        templates = {}
+    workouts = []
+    for path in HEVY_WORKOUTS_DIR.glob("*.json"):
+        try:
+            w = json.loads(path.read_text(encoding="utf-8"))
+            start = datetime.fromisoformat(str(w["start_time"]).replace("Z", "+00:00"))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        sets = []
+        for ex in w.get("exercises") or []:
+            template_id = ex.get("exercise_template_id")
+            muscle = dig(templates, template_id or "", "primary_muscle_group") or "other"
+            for st in ex.get("sets") or []:
+                if st.get("type") == "warmup":
+                    continue
+                weight = st.get("weight_kg")
+                reps = st.get("reps")
+                sets.append({
+                    "exercise_id": template_id or ex.get("title"),
+                    "exercise": ex.get("title") or "?",
+                    "muscle": muscle,
+                    "weight": weight if isinstance(weight, (int, float)) else None,
+                    "reps": reps if isinstance(reps, (int, float)) else None,
+                })
+        w["_date"] = start.astimezone().date()
+        w["_sets"] = sets
+        workouts.append(w)
+    workouts.sort(key=lambda w: str(w.get("start_time")))
+    return workouts
 
 
 def load_food_records() -> dict[str, dict[str, Any]]:
@@ -332,6 +406,7 @@ def svg_line_chart(
     unit: str = "",
     baseline_band: tuple[float, float] | None = None,
     y_fmt: str = "{:.0f}",
+    point_titles: list[str] | None = None,
 ) -> str:
     non_null = [v for v in values if v is not None]
     if not non_null:
@@ -403,9 +478,11 @@ def svg_line_chart(
             f'stroke="{color}" stroke-width="2.5" stroke-linejoin="round" />'
         )
 
-    for x, y in points:
+    for i, (x, y) in enumerate(points):
         if y is not None:
-            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}" />')
+            # Optional hover text per point (e.g. "12.10: 80 kg × 6").
+            title = f"<title>{esc(point_titles[i])}</title>" if point_titles else ""
+            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}">{title}</circle>')
 
     for i in _label_indices(len(labels)):
         x = points[i][0]
@@ -742,40 +819,38 @@ def build_readiness_tile(records: list[dict[str, Any]]) -> str:
     return _card("Gotowość (Training Readiness)", body)
 
 
-def build_hrv_tile(records: list[dict[str, Any]]) -> str:
-    trend = records[-TREND_DAYS:]
-    labels = [fmt_short_date(r["_date"]) for r in trend]
-    values = [dig(r, "hrv", "last_night_avg") for r in trend]
+def build_steps_tile(records: list[dict[str, Any]]) -> str:
+    by_date = {r["_date"]: r.get("steps") for r in records}
+    days = last_n_calendar_days(TREND_DAYS)
+    labels = [fmt_short_date(d) for d in days]
+    values = [by_date.get(d) for d in days]
 
-    baseline_band = None
-    for r in reversed(trend):
-        lo = dig(r, "hrv", "baseline_balanced_low")
-        hi = dig(r, "hrv", "baseline_balanced_upper")
-        if lo is not None and hi is not None:
-            baseline_band = (lo, hi)
-            break
-
-    latest = next((v for v in reversed(values) if v is not None), None)
-    latest_status = next(
-        (dig(r, "hrv", "status") for r in reversed(trend) if dig(r, "hrv", "status")), None
+    # Today is still in progress, so the headline is yesterday's full day.
+    yesterday = values[-2] if len(values) > 1 else None
+    known = [v for v in values[:-1] if v is not None]
+    avg = sum(known) / len(known) if known else None
+    value_text = (
+        f"{yesterday:,.0f}".replace(",", " ") + '<span class="stat-unit">wczoraj</span>'
+        if yesterday is not None else "brak danych"
     )
-    value_text = f'{latest:.0f}<span class="stat-unit">ms</span>' if latest is not None else "brak danych"
-    status_text = pl_word(HRV_STATUS_PL, latest_status) if latest is not None else ""
-    baseline_text = f"baseline {baseline_band[0]:.0f}–{baseline_band[1]:.0f} ms" if baseline_band else ""
-    sub_parts = [t for t in (status_text, baseline_text) if t]
-    sub_text = " · ".join(sub_parts)
-
-    chart = svg_line_chart(
-        labels, values, "var(--c-hrv)", unit=" ms", baseline_band=baseline_band
+    sub_text = (
+        f"średnio {avg:,.0f} / dzień (pełne dni)".replace(",", " ") if avg is not None else "&nbsp;"
     )
+
+    if not any(v is not None for v in values):
+        chart = '<p class="empty-msg">Brak danych do wykresu.</p>'
+    else:
+        chart = svg_bar_chart(
+            labels, values, "var(--c-neutral)", y_top=nice_axis_top(values, None, 2500)
+        )
     body = f'''
 <div class="stat-row">
   <div class="stat-big">{value_text}</div>
-  <div class="stat-sub">{esc(sub_text)}</div>
+  <div class="stat-sub">{sub_text}</div>
 </div>
 <div class="chart-wrap">{chart}</div>
 '''
-    return _card("HRV — ostatnie 14 nocy", body)
+    return _card("Kroki — ostatnie 14 dni", body)
 
 
 def build_rhr_tile(records: list[dict[str, Any]]) -> str:
@@ -949,6 +1024,210 @@ def build_nutrition_trend_cards(
     return kcal_card + protein_card + carbs_card
 
 
+def _week_start(d: date) -> date:
+    return d - timedelta(days=d.weekday())
+
+
+def _thousands(v: float) -> str:
+    return f"{v:,.0f}".replace(",", " ")
+
+
+def build_workouts_per_week_tile(workouts: list[dict[str, Any]]) -> str:
+    this_week = _week_start(date.today())
+    weeks = [this_week - timedelta(weeks=i) for i in range(TRAINING_WEEKS - 1, -1, -1)]
+    counts = {wk: 0 for wk in weeks}
+    for w in workouts:
+        wk = _week_start(w["_date"])
+        if wk in counts:
+            counts[wk] += 1
+    values = [float(counts[wk]) for wk in weeks]
+    prev_weeks = values[-1 - VOLUME_BASELINE_WINDOWS:-1]
+    avg = sum(prev_weeks) / len(prev_weeks) if prev_weeks else 0.0
+
+    chart = svg_bar_chart(
+        [fmt_short_date(wk) for wk in weeks], values, "var(--c-neutral)",
+        y_top=nice_axis_top(values, None, 1),
+    )
+    body = f'''
+<div class="stat-row">
+  <div class="stat-big">{int(values[-1])}<span class="stat-unit">w tym tygodniu</span></div>
+  <div class="stat-sub">średnio {avg:.1f} / tydzień (4 poprzednie tygodnie)</div>
+</div>
+<div class="chart-wrap">{chart}</div>
+'''
+    return _card(f"Treningi w tygodniu — {TRAINING_WEEKS} tygodni", body)
+
+
+def _muscle_totals(
+    workouts: list[dict[str, Any]], start: date, end: date
+) -> tuple[dict[str, float], dict[str, float]]:
+    """(volume_kg, working_sets) per primary muscle group for start <= day <= end."""
+    volume: dict[str, float] = {}
+    sets: dict[str, float] = {}
+    for w in workouts:
+        if not start <= w["_date"] <= end:
+            continue
+        for st in w["_sets"]:
+            m = st["muscle"]
+            sets[m] = sets.get(m, 0) + 1
+            if st["weight"] is not None and st["reps"] is not None:
+                volume[m] = volume.get(m, 0.0) + st["weight"] * st["reps"]
+    return volume, sets
+
+
+def _muscle_bars_html(current: dict[str, float], baseline: dict[str, float], unit: str) -> str:
+    groups = sorted(
+        {m for m, v in current.items() if v} | {m for m, v in baseline.items() if v},
+        key=lambda m: (-current.get(m, 0), -baseline.get(m, 0)),
+    )[:10]
+    if not groups:
+        return '<div class="empty-fill"><p class="empty-msg">Brak serii w tym okresie.</p></div>'
+    top = max(max(current.get(m, 0), baseline.get(m, 0)) for m in groups) or 1
+    rows = []
+    for m in groups:
+        cur = current.get(m, 0)
+        base = baseline.get(m, 0)
+        tick = (
+            f'<span class="mg-tick" style="left:{base / top * 100:.1f}%" '
+            f'title="średnia: {_thousands(base)}{unit}"></span>'
+            if base else ""
+        )
+        rows.append(
+            f'<div class="mg-row">'
+            f'<span class="mg-label">{esc(MUSCLE_GROUP_PL.get(m, m))}</span>'
+            f'<span class="mg-track"><span class="mg-fill" style="width:{cur / top * 100:.1f}%"></span>{tick}</span>'
+            f'<span class="mg-value">{_thousands(cur)}{unit}</span>'
+            f"</div>"
+        )
+    legend = (
+        '<div class="legend"><span class="legend-item"><i class="legend-bar"></i>ostatnie 7 dni</span>'
+        '<span class="legend-item"><i class="legend-tick"></i>średnia z 4 poprzednich okresów 7-dniowych</span></div>'
+    )
+    return f'<div class="mg-bars">{"".join(rows)}</div>{legend}'
+
+
+def build_muscle_tiles(workouts: list[dict[str, Any]]) -> str:
+    today = date.today()
+    cur_start = today - timedelta(days=VOLUME_WINDOW_DAYS - 1)
+    cur_vol, cur_sets = _muscle_totals(workouts, cur_start, today)
+    base_vol: dict[str, float] = {}
+    base_sets: dict[str, float] = {}
+    for i in range(VOLUME_BASELINE_WINDOWS):
+        end = cur_start - timedelta(days=VOLUME_WINDOW_DAYS * i + 1)
+        vol, sets = _muscle_totals(workouts, end - timedelta(days=VOLUME_WINDOW_DAYS - 1), end)
+        for m, v in vol.items():
+            base_vol[m] = base_vol.get(m, 0) + v / VOLUME_BASELINE_WINDOWS
+        for m, v in sets.items():
+            base_sets[m] = base_sets.get(m, 0) + v / VOLUME_BASELINE_WINDOWS
+
+    vol_body = (
+        f'<div class="stat-row"><div class="stat-big">{_thousands(sum(cur_vol.values()))}'
+        '<span class="stat-unit">kg łącznie</span></div></div>'
+        + _muscle_bars_html(cur_vol, base_vol, " kg")
+    )
+    sets_body = (
+        f'<div class="stat-row"><div class="stat-big">{_thousands(sum(cur_sets.values()))}'
+        '<span class="stat-unit">serii roboczych</span></div></div>'
+        + _muscle_bars_html(cur_sets, base_sets, "")
+    )
+    return (
+        _card("Objętość per partia — ostatnie 7 dni", vol_body)
+        + _card("Serie robocze per partia — ostatnie 7 dni", sets_body)
+    )
+
+
+def _fmt_kg(v: float) -> str:
+    return f"{v:.1f}".rstrip("0").rstrip(".")
+
+
+def build_progress_tiles(workouts: list[dict[str, Any]]) -> str:
+    """Best set per session (heaviest weight, then most reps) for the 5
+    weighted exercises done in the most sessions over the last 90 days."""
+    cutoff = date.today() - timedelta(days=PROGRESS_LOOKBACK_DAYS)
+    sessions: dict[str, list[tuple[date, float, float]]] = {}
+    names: dict[str, str] = {}
+    for w in workouts:
+        best: dict[str, tuple[float, float]] = {}
+        for st in w["_sets"]:
+            if st["weight"] is None or st["weight"] <= 0:
+                continue
+            key = st["exercise_id"]
+            names[key] = st["exercise"]
+            cand = (st["weight"], st["reps"] or 0)
+            if key not in best or cand > best[key]:
+                best[key] = cand
+        for key, (wt, reps) in best.items():
+            sessions.setdefault(key, []).append((w["_date"], wt, reps))
+
+    recent = {k: sum(1 for d, _, _ in v if d >= cutoff) for k, v in sessions.items()}
+    top = sorted((k for k, c in recent.items() if c), key=lambda k: -recent[k])[:PROGRESS_EXERCISES]
+    if not top:
+        return _card(
+            "Progres w ćwiczeniach",
+            '<div class="empty-fill"><p class="empty-msg">Brak serii z ciężarem w ostatnich 90 dniach.</p></div>',
+        )
+
+    cards = []
+    for key in top:
+        pts = sessions[key][-PROGRESS_MAX_POINTS:]
+        labels = [fmt_short_date(d) for d, _, _ in pts]
+        values: list[float | None] = [wt for _, wt, _ in pts]
+        titles = [f"{fmt_short_date(d)}: {_fmt_kg(wt)} kg × {reps:.0f}" for d, wt, reps in pts]
+        last_d, last_w, last_r = pts[-1]
+        rec_d, rec_w, rec_r = max(sessions[key], key=lambda t: (t[1], t[2]))
+        chart = svg_line_chart(labels, values, "var(--c-train)", unit=" kg", point_titles=titles)
+        body = f'''
+<div class="stat-row">
+  <div class="stat-big">{_fmt_kg(last_w)}<span class="stat-unit">kg × {last_r:.0f}</span></div>
+  <div class="stat-sub">ostatnio {fmt_short_date(last_d)} · najlepiej <b>{_fmt_kg(rec_w)} kg × {rec_r:.0f}</b> ({fmt_short_date(rec_d)}) · {recent[key]} sesji / 90 dni</div>
+</div>
+<div class="chart-wrap">{chart}</div>
+'''
+        cards.append(_card(f"Progres: {names[key]}", body))
+    return "".join(cards)
+
+
+def build_hevy_meta(workouts: list[dict[str, Any]]) -> str:
+    try:
+        status = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
+        hevy = dig(status, "steps", "hevy", default={}) or {}
+    except (OSError, ValueError):
+        hevy = {}
+    parts = [f"Treningów w danych: <b>{len(workouts)}</b>"]
+    last = hevy.get("last_success")
+    if last:
+        last_dt = datetime.strptime(last, "%Y-%m-%dT%H:%M:%S")
+        parts.append(f"ostatnia synchronizacja Hevy: <b>{esc(fmt_dt_pl(last_dt))}</b>")
+    if hevy.get("result") == "fail":
+        parts.append(f"ostatni przebieg nieudany: {esc(hevy.get('message'))}")
+    return f'<p class="panel-meta">{" &middot; ".join(parts)}</p>'
+
+
+def build_training_panel(
+    workouts: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+    weight_entries: list[dict[str, Any]],
+) -> str:
+    if workouts:
+        tiles = (
+            build_workouts_per_week_tile(workouts)
+            + build_muscle_tiles(workouts)
+            + build_progress_tiles(workouts)
+        )
+    else:
+        tiles = _card(
+            "Brak treningów z Hevy",
+            '<div class="empty-fill"><p class="empty-msg">Dodaj HEVY_API_KEY do .env '
+            "(hevy.com/settings?developer, wymaga Hevy Pro) i uruchom scripts/refresh_all.sh.</p></div>",
+        )
+    return (
+        build_hevy_meta(workouts)
+        + tiles
+        + build_steps_tile(records)
+        + build_weight_tile(weight_entries)
+    )
+
+
 def _card(title: str, body_html: str, extra_class: str = "") -> str:
     cls = f"card {extra_class}".strip()
     return f'<section class="{cls}"><h2>{esc(title)}</h2>{body_html}</section>'
@@ -973,9 +1252,9 @@ CSS = """
   --c-rem: #f2b84b;
   --c-awake: #5b6472;
 
-  --c-hrv: #5b9dd9;
   --c-rhr: #e5735a;
   --c-neutral: #7c8ba1;
+  --c-train: #8fa3c4;
 
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 
@@ -1223,6 +1502,88 @@ main.layout {
 
 .nutrient-value-wide { grid-column: 2 / span 2; text-align: left; }
 
+/* Tabs: CSS-only (radio + label), so they work even with scripts off. */
+.tab-input { position: absolute; opacity: 0; pointer-events: none; }
+
+.tabs {
+  max-width: 1200px;
+  margin: 6px auto 0;
+  padding: 0 20px;
+  display: flex;
+  gap: 6px;
+}
+
+.tabs label {
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+#tab-zdrowie:checked ~ .tabs label[for="tab-zdrowie"],
+#tab-trening:checked ~ .tabs label[for="tab-trening"] {
+  background: var(--bg-card);
+  color: var(--text);
+  border-color: var(--c-neutral);
+}
+
+#tab-zdrowie:focus-visible ~ .tabs label[for="tab-zdrowie"],
+#tab-trening:focus-visible ~ .tabs label[for="tab-trening"] {
+  outline: 2px solid var(--c-neutral);
+  outline-offset: 2px;
+}
+
+main.panel { display: none; }
+#tab-zdrowie:checked ~ .panel-zdrowie,
+#tab-trening:checked ~ .panel-trening { display: grid; }
+
+.panel-meta {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.panel-meta b { color: var(--text); font-weight: 600; }
+
+/* Per-muscle-group horizontal bars with a tick for the baseline average. */
+.mg-bars { display: flex; flex-direction: column; gap: 7px; }
+
+.mg-row { display: grid; grid-template-columns: 96px 1fr 64px; align-items: center; gap: 8px; }
+
+.mg-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mg-track { position: relative; height: 7px; border-radius: 3px; background: var(--track); }
+
+.mg-fill { display: block; height: 100%; border-radius: 3px; background: var(--c-neutral); }
+
+.mg-tick {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 13px;
+  margin-left: -1px;
+  background: var(--text);
+  opacity: 0.7;
+  border-radius: 1px;
+}
+
+.mg-value { font-size: 11px; text-align: right; white-space: nowrap; }
+
+.legend-item i.legend-bar { background: var(--c-neutral); }
+
+.legend-item i.legend-tick { width: 2px; height: 12px; background: var(--text); opacity: 0.7; }
+
 /* Shared by every "no data" state: a short, fixed-height hint (tile stays
    around 90px tall total) instead of a tall padded block. */
 .empty-fill {
@@ -1247,7 +1608,7 @@ def build_html(
     if records:
         layout = (
             build_readiness_tile(records)
-            + build_hrv_tile(records)
+            + build_steps_tile(records)
             + build_rhr_tile(records)
         )
     else:
