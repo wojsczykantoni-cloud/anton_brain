@@ -45,7 +45,7 @@ if [ $FORCE -eq 0 ] && "$PY" "$STATUS" ok-today morning_brief; then
 fi
 if [ $FORCE -eq 0 ] && [ "$(date +%-H)" -ge $SEND_DEADLINE_HOUR ]; then
   log "Po ${SEND_DEADLINE_HOUR}:00 - nie wysyłam porannego briefu (ręcznie: scripts/morning-brief.sh --force)."
-  status_set morning_brief skip "Pominięty: Mac uśpiony/wyłączony w porze briefu"
+  status_set morning_brief skip "Pominięty: przebieg po ${SEND_DEADLINE_HOUR}:00 (brief wysyłany tylko rano)"
   exit 0
 fi
 

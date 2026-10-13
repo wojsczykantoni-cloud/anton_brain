@@ -934,7 +934,7 @@ async function launchdJobLine(label) {
     const out = await execFileP('launchctl', ['print', `gui/${uid}/com.antonbrain.${label}`]);
     const runs = (out.match(/\n\s*runs = (\d+)/) || [])[1] || '?';
     const exit = (out.match(/last exit code = ([^\n]+)/) || [])[1] || '?';
-    const state = (out.match(/\n\s*state = (\S+)/) || [])[1] || '?';
+    const state = (out.match(/\n\s*state = ([^\n]+)/) || [])[1] || "?";
     const ok = exit === '0' || exit.startsWith('(never exited)') || state === 'running';
     return `${ok ? '✅' : '⚠️'} ${label}: załadowane, ${state}, uruchomień ${runs}, ostatni kod wyjścia ${exit}`;
   } catch (_) {
