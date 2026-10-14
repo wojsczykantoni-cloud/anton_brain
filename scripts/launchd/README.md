@@ -6,7 +6,7 @@ Kopie referencyjne plistów launchd. Działające kopie leżą w
 | Label | Co robi | Kiedy |
 |---|---|---|
 | `com.antonbrain.garminsync` | `scripts/refresh_all.sh`: Garmin → Hevy → waga → dashboard | 11:20, 15:30, 21:00, przy logowaniu (`RunAtLoad`), po wybudzeniu jeśli termin wypadł we śnie |
-| `com.antonbrain.morningbrief` | `scripts/morning-brief.sh`: notatka dnia + brief na Telegram | 7:00, przy logowaniu, po wybudzeniu (wysyła najwyżej raz dziennie, tylko przed 14:00) |
+| `com.antonbrain.morningbrief` | `scripts/morning-brief.sh`: notatka dnia + brief na Telegram; kalendarz czyta przez `open -a Terminal scripts/ical-today.command` (spod launchd `ical` dostaje "Calendar access denied") | 7:00, przy logowaniu, po wybudzeniu (wysyła najwyżej raz dziennie, tylko przed 14:00) |
 | `com.antonbrain.telegrambot` | `open -a Terminal scripts/start-bot.command` (Terminal ma dostęp do Kalendarza dla `ical`); pętla restartuje `node bot.js` po kodzie ≠ 0 | przy logowaniu |
 | `com.antonbrain.botwatchdog` | `scripts/bot_watchdog.sh`: wskrzesza bota, gdy nie działa ani bot, ani pętla restartu | co 3 min i przy logowaniu |
 

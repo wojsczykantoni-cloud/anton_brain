@@ -4,6 +4,7 @@
 Usage (from repo root, using the project venv):
 
     .venv/bin/python scripts/brief_message.py daily/YYYY-MM-DD.md
+        [--events-json PATH | --calendar-unavailable] [--calendar-only]
 
 Prints exactly:
 
@@ -16,38 +17,59 @@ Prints exactly:
     ☐ <item>
 
 With no events the "📅 Dziś" section says "Dziś wolne od zajęć". Events come
-from `ical today -o json` (start times are UTC, converted to local time);
-declined and cancelled events are left out. If the calendar can't be read,
-the section says so instead of pretending the day is free.
+from `ical today -o json` (start times are UTC, converted to local time), or
+from --events-json PATH, a file holding that output (morning-brief.sh fetches
+it with retries); declined and cancelled events, and events from the calendars in
+SKIPPED_CALENDARS ("Święta w Polsce"), are left out. If the calendar
+can't be read, the section says so instead of pretending the day is free; with
+--calendar-unavailable (every retry failed) the whole section is the single
+line "📅 Dziś: kalendarz chwilowo niedostępny, spróbuję ponownie".
+--calendar-only prints just the "📅 Dziś" section (the follow-up message
+morning-brief.sh sends when a later calendar retry succeeds).
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import subprocess
 import sys
+import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 
 ICAL_BIN = "/usr/local/bin/ical"
 WEEKDAYS_PL = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota", "Niedziela"]
 OPEN_TASK_RE = re.compile(r"^\s*[-*] \[ \]\s+(\S.*?)\s*$")
+SKIPPED_CALENDARS = {"Święta w Polsce"}
+CALENDAR_UNAVAILABLE = "📅 Dziś: kalendarz chwilowo niedostępny, spróbuję ponownie"
 
 
-def event_lines(today: date) -> list[str]:
-    res = subprocess.run(
-        [ICAL_BIN, "today", "-o", "json"], capture_output=True, text=True, timeout=60
-    )
-    if res.returncode != 0:
-        print(f"ical today nie powiodło się: {res.stderr.strip()[:200]}", file=sys.stderr)
-        return ["Nie udało się odczytać kalendarza"]
-    events = json.loads(res.stdout or "[]") or []
+def _nfc(text: object) -> str:
+    return unicodedata.normalize("NFC", str(text or "")).strip()
+
+
+def event_lines(today: date, events_json: Path | None = None) -> list[str]:
+    if events_json is not None:
+        raw = events_json.read_text(encoding="utf-8")
+    else:
+        res = subprocess.run(
+            [ICAL_BIN, "today", "-o", "json"], capture_output=True, text=True, timeout=60
+        )
+        if res.returncode != 0:
+            print(f"ical today nie powiodło się: {res.stderr.strip()[:200]}", file=sys.stderr)
+            return ["Nie udało się odczytać kalendarza"]
+        raw = res.stdout
+    events = json.loads(raw or "[]") or []
+    skipped = {_nfc(c) for c in SKIPPED_CALENDARS}
 
     all_day: list[str] = []
     timed: list[tuple[datetime, str]] = []
     for ev in events:
         if ev.get("self_status") == "declined" or ev.get("status") == "canceled":
+            continue
+        if _nfc(ev.get("calendar")) in skipped:
             continue
         title = " ".join(str(ev.get("title") or "(bez tytułu)").split())
         if ev.get("all_day"):
@@ -83,17 +105,26 @@ def open_priorities(note_path: Path) -> list[str]:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        print("Użycie: brief_message.py <ścieżka notatki dziennej>", file=sys.stderr)
-        sys.exit(64)
+    parser = argparse.ArgumentParser(description="Treść porannego briefu na Telegram.")
+    parser.add_argument("note", type=Path, help="ścieżka notatki dziennej")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--events-json", type=Path, help="gotowy wynik `ical today -o json`")
+    source.add_argument("--calendar-unavailable", action="store_true", help="kalendarz nieosiągalny")
+    parser.add_argument("--calendar-only", action="store_true", help="tylko sekcja 📅 Dziś")
+    args = parser.parse_args()
     today = date.today()
 
-    events = event_lines(today) or ["Dziś wolne od zajęć"]
-    parts = [
-        f"☀️ {WEEKDAYS_PL[today.weekday()]}, {today:%d.%m}",
-        "📅 Dziś\n" + "\n".join(events),
-    ]
-    priorities = open_priorities(Path(sys.argv[1]))
+    if args.calendar_unavailable:
+        calendar = CALENDAR_UNAVAILABLE
+    else:
+        events = event_lines(today, args.events_json) or ["Dziś wolne od zajęć"]
+        calendar = "📅 Dziś\n" + "\n".join(events)
+    if args.calendar_only:
+        print(calendar)
+        return
+
+    parts = [f"☀️ {WEEKDAYS_PL[today.weekday()]}, {today:%d.%m}", calendar]
+    priorities = open_priorities(args.note)
     if priorities:
         parts.append("🎯 Priorytety\n" + "\n".join(f"☐ {p}" for p in priorities))
     print("\n\n".join(parts))
