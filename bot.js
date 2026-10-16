@@ -815,6 +815,167 @@ bot.onText(/^\/cel(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   }
 });
 
+// --- /przenies ----------------------------------------------------------------
+// Przenosi dzisiejszy wpis jedzenia na wczoraj (np. gdy /dzien wysłano po
+// północy). Nic nie jest kasowane: dzisiejszy plik i ewentualny nadpisywany
+// wpis wczorajszy zostają jako kopie .bak (których dashboard nie czyta).
+const PRZENIES_USAGE = 'Format: /przenies (albo /przenies tak, żeby nadpisać istniejący wpis z wczoraj).';
+
+function fmtDayMonth(dateStr) {
+  const [, m, d] = dateStr.split('-');
+  return `${d}.${m}`;
+}
+
+function fmtMacros(rec) {
+  return `${rec.kcal} kcal, B ${rec.protein}, W ${rec.carbs}, T ${rec.fat}`;
+}
+
+// Wolna nazwa kopii: plik.json.bak, a gdy zajęta - plik.json.bak.1, .2 ...
+function backupPathFor(filePath) {
+  let candidate = `${filePath}.bak`;
+  for (let i = 1; fs.existsSync(candidate); i++) candidate = `${filePath}.bak.${i}`;
+  return candidate;
+}
+
+bot.onText(/^\/przenies(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
+  if (!isAuthorized(msg)) return;
+
+  const arg = match[1] && match[1].trim();
+  if (arg && !/^tak$/i.test(arg)) {
+    await bot.sendMessage(msg.chat.id, PRZENIES_USAGE);
+    return;
+  }
+  const overwrite = Boolean(arg);
+
+  const todayStr = todayISO();
+  const yesterdayStr = isoDateFor(addDays(new Date(), -1));
+  const srcPath = path.join(FOOD_DIR, `${todayStr}.json`);
+  const dstPath = path.join(FOOD_DIR, `${yesterdayStr}.json`);
+
+  try {
+    if (!fs.existsSync(srcPath)) {
+      await bot.sendMessage(msg.chat.id, `Brak wpisu jedzenia na dziś (${fmtDayMonth(todayStr)}) - nie ma czego przenosić.`);
+      return;
+    }
+    const record = JSON.parse(fs.readFileSync(srcPath, 'utf8'));
+
+    if (fs.existsSync(dstPath)) {
+      if (!overwrite) {
+        let existing = null;
+        try {
+          existing = JSON.parse(fs.readFileSync(dstPath, 'utf8'));
+        } catch (_) { /* uszkodzony plik - pokażemy bez wartości */ }
+        const values = existing ? `: ${fmtMacros(existing)}` : '';
+        await bot.sendMessage(
+          msg.chat.id,
+          `⚠️ Wczoraj (${fmtDayMonth(yesterdayStr)}) już ma wpis${values}. ` +
+          'Wyślij /przenies tak, żeby go nadpisać (stary wpis zostanie jako kopia .bak).'
+        );
+        return;
+      }
+      fs.renameSync(dstPath, backupPathFor(dstPath));
+    }
+
+    record.date = yesterdayStr;
+    fs.writeFileSync(dstPath, JSON.stringify(record, null, 2), 'utf8');
+    fs.renameSync(srcPath, backupPathFor(srcPath));
+
+    await rebuildDashboardSafe();
+    await bot.sendMessage(msg.chat.id, `✅ Przeniesiono: ${fmtMacros(record)} → ${fmtDayMonth(yesterdayStr)}`);
+  } catch (err) {
+    console.error('Błąd /przenies:', err.message);
+    await bot.sendMessage(msg.chat.id, '❌ Nie udało się przenieść wpisu.');
+  }
+});
+
+// --- /odswiez -----------------------------------------------------------------
+// Ręczny przebieg scripts/refresh_all.sh (to samo co launchd o 11:20/15:30/21:00).
+// Wynik czytamy z data/status.json: kroki zapisane od startu tego przebiegu.
+const REFRESH_SCRIPT = path.join(__dirname, 'scripts', 'refresh_all.sh');
+const REFRESH_LOCK_DIR = path.join(__dirname, 'logs', '.lock-refresh');
+const REFRESH_LOCK_STALE_MS = 30 * 60 * 1000; // jak acquire_lock w scripts/lib.sh
+const REFRESH_COOLDOWN_MS = 60 * 1000;
+const REFRESH_TIMEOUT_MS = 20 * 60 * 1000;
+const REFRESH_STEPS = ['garmin', 'hevy', 'hevy_csv', 'waga', 'dashboard'];
+
+const refreshState = { running: false, lastStartedAt: 0 };
+
+// Przebieg uruchomiony przez launchd trzyma blokadę logs/.lock-refresh -
+// refresh_all.sh by się wtedy po cichu pominął, więc sprawdzamy ją wcześniej.
+function refreshLockHeld() {
+  try {
+    return Date.now() - fs.statSync(REFRESH_LOCK_DIR).mtimeMs < REFRESH_LOCK_STALE_MS;
+  } catch (_) {
+    return false;
+  }
+}
+
+function fmtTime(value) {
+  const d = new Date(value);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// Najwyżej 5 linii (po jednej na krok) + jedna komenda naprawcza przy błędzie.
+// Celowo bez treści komunikatów kroków - mogą zawierać wartości zdrowotne.
+function buildRefreshSummary(startedAt, runError) {
+  const steps = readStatusFile().steps || {};
+  const startedSec = Math.floor(startedAt / 1000) * 1000;
+  const icon = { ok: '✅', fail: '❌', skip: '⏭️' };
+  const lines = [];
+  let fix = null;
+
+  for (const key of REFRESH_STEPS) {
+    const st = steps[key];
+    if (!st || !st.at || new Date(st.at).getTime() < startedSec) continue;
+    lines.push(`${icon[st.result] || '▫️'} ${STEP_LABELS[key] || key} ${fmtTime(st.at)}`);
+    if (st.result === 'fail' && !fix && st.fix) fix = st.fix;
+  }
+
+  if (!lines.length) {
+    const reason = runError && runError.killed ? 'przekroczony limit czasu' : 'brak wyników kroków';
+    lines.push(`❌ Odświeżanie ${fmtTime(Date.now())}: ${reason}`);
+    fix = 'cd ~/anton_brain && scripts/refresh_all.sh';
+  }
+  if (fix) lines.push(`Naprawa: ${fix}`);
+  return lines.join('\n');
+}
+
+bot.onText(/^\/odswiez(?:@\w+)?$/, async (msg) => {
+  if (!isAuthorized(msg)) return;
+
+  if (refreshState.running || refreshLockHeld()) {
+    await bot.sendMessage(msg.chat.id, '⏳ Odświeżanie już trwa.');
+    return;
+  }
+  const sinceLast = Date.now() - refreshState.lastStartedAt;
+  if (sinceLast < REFRESH_COOLDOWN_MS) {
+    const wait = Math.ceil((REFRESH_COOLDOWN_MS - sinceLast) / 1000);
+    await bot.sendMessage(msg.chat.id, `⏳ Odświeżanie najwyżej raz na minutę - spróbuj za ${wait} s.`);
+    return;
+  }
+
+  refreshState.running = true;
+  const startedAt = Date.now();
+  refreshState.lastStartedAt = startedAt;
+  console.log('/odswiez: start refresh_all.sh');
+
+  try {
+    await bot.sendMessage(msg.chat.id, 'Odświeżam…');
+  } catch (err) {
+    console.error('Błąd wysyłki /odswiez:', err.message);
+  }
+
+  execFile(REFRESH_SCRIPT, [], { cwd: __dirname, timeout: REFRESH_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, async (error) => {
+    refreshState.running = false;
+    console.log(`/odswiez: koniec (${error ? `kod ${error.code ?? error.signal}` : 'OK'})`);
+    try {
+      await bot.sendMessage(msg.chat.id, buildRefreshSummary(startedAt, error));
+    } catch (err) {
+      console.error('Błąd wysyłki wyniku /odswiez:', err.message);
+    }
+  });
+});
+
 bot.on('message', async (msg) => {
   if (!isAuthorized(msg)) return;
   if (!msg.text) return; // interesują nas tylko wiadomości tekstowe
@@ -1020,6 +1181,27 @@ bot.onText(/^\/status(?:@\w+)?$/, async (msg) => {
     console.error('Błąd /status:', err.message);
     await bot.sendMessage(msg.chat.id, '❌ Nie udało się zebrać statusu.');
   }
+});
+
+// Lista komend w menu Telegrama - ustawiana przy każdym starcie, żeby nie
+// rozjeżdżała się z kodem.
+const BOT_COMMANDS = [
+  { command: 'priorytet', description: 'Dodaj priorytet na dziś' },
+  { command: 'nauka', description: 'Dodaj notatkę ze studiów' },
+  { command: 'note', description: 'Dodaj pomysł lub obserwację' },
+  { command: 'event', description: 'Dodaj wydarzenie do kalendarza' },
+  { command: 'usun', description: 'Usuń wydarzenie z kalendarza' },
+  { command: 'brief', description: 'Pokaż dzisiejszą notatkę' },
+  { command: 'dzien', description: 'Zapisz podsumowanie dnia (kcal, B, W, T)' },
+  { command: 'przenies', description: 'Przenieś dzisiejszy wpis jedzenia na wczoraj' },
+  { command: 'waga', description: 'Zapisz wagę' },
+  { command: 'cel', description: 'Ustaw dzienne cele kalorii i makr' },
+  { command: 'odswiez', description: 'Odśwież dane (Garmin, Hevy, waga, dashboard)' },
+  { command: 'status', description: 'Pokaż stan synchronizacji i zadań' },
+];
+
+bot.setMyCommands(BOT_COMMANDS).catch((err) => {
+  console.error('Nie udało się ustawić listy komend:', err.message);
 });
 
 console.log('Bot Telegram uruchomiony i nasłuchuje...');
