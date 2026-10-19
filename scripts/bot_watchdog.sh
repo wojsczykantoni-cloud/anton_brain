@@ -7,6 +7,14 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_FILE="$PROJECT_DIR/logs/watchdog.log"
 PLIST="$HOME/Library/LaunchAgents/com.antonbrain.telegrambot.plist"
 
+PID_FILE="$PROJECT_DIR/data/bot.pid"
+
+# Bot trzyma blokadę w data/bot.pid - jeśli ten PID żyje i to bot.js, nic
+# nie robimy. pgrep łapie dodatkowo pętlę restartu (sleep 10 s między
+# startami) i bota sprzed wprowadzenia blokady.
+if [ -f "$PID_FILE" ] && ps -p "$(cat "$PID_FILE")" -o command= 2>/dev/null | grep -q "bot\.js"; then
+    exit 0
+fi
 if pgrep -f "node bot.js" >/dev/null || pgrep -f "scripts/start-bot.command" >/dev/null; then
     exit 0
 fi

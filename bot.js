@@ -3,7 +3,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const TelegramBot = require('node-telegram-bot-api');
 
 // Każda linia logu z datą i godziną: na konsolę (okno Terminala) i do
@@ -48,6 +48,87 @@ const CHAT_ID = String(process.env.TELEGRAM_CHAT_ID);
 if (!TOKEN || !CHAT_ID) {
   console.error('Brak TELEGRAM_BOT_TOKEN lub TELEGRAM_CHAT_ID w pliku .env');
   process.exit(1);
+}
+
+// --- Jedna instancja ---------------------------------------------------------
+// Dwa procesy na tym samym tokenie kradną sobie getUpdates (409 Conflict)
+// i oba odpowiadają na wiadomości. Blokada: data/bot.pid z PID działającego
+// bota. Druga kopia kończy się kodem 0 - start-bot.command nie restartuje jej
+// w pętli. Plik po martwym procesie (albo po PID zajętym już przez inny
+// program) jest przejmowany.
+const PID_PATH = path.join(__dirname, 'data', 'bot.pid');
+
+function isBotProcess(pid) {
+  try {
+    process.kill(pid, 0);
+  } catch (err) {
+    if (err.code !== 'EPERM') return false;
+  }
+  try {
+    const command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
+    return /\bbot\.js\b/.test(command);
+  } catch (_) {
+    return false;
+  }
+}
+
+function readPidFile() {
+  try {
+    return parseInt(fs.readFileSync(PID_PATH, 'utf8'), 10) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function acquireSingleInstanceLock() {
+  fs.mkdirSync(path.dirname(PID_PATH), { recursive: true });
+  // Plik tymczasowy + link: blokada powstaje atomowo i od razu z PID w środku,
+  // więc równoległy start nigdy nie zobaczy pustego pliku.
+  const tmpPath = `${PID_PATH}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, `${process.pid}\n`);
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        fs.linkSync(tmpPath, PID_PATH);
+        return readPidFile() === process.pid;
+      } catch (err) {
+        if (err.code !== 'EEXIST') throw err;
+      }
+      const otherPid = readPidFile();
+      if (otherPid && otherPid !== process.pid && isBotProcess(otherPid)) {
+        console.error(`Bot już działa (PID ${otherPid}, blokada ${PID_PATH}) - ta kopia (PID ${process.pid}) kończy pracę.`);
+        return false;
+      }
+      console.log(`Nieaktualna blokada ${PID_PATH} (PID ${otherPid || 'brak'} nie działa) - przejmuję.`);
+      if (readPidFile() === otherPid) {
+        try { fs.unlinkSync(PID_PATH); } catch (_) { /* ktoś usunął pierwszy */ }
+      }
+    }
+    console.error(`Nie udało się przejąć blokady ${PID_PATH} - kończę.`);
+    return false;
+  } finally {
+    try { fs.unlinkSync(tmpPath); } catch (_) { /* już usunięty */ }
+  }
+}
+
+if (!acquireSingleInstanceLock()) {
+  process.exit(0);
+}
+
+process.on('exit', () => {
+  if (readPidFile() === process.pid) {
+    try { fs.unlinkSync(PID_PATH); } catch (_) { /* już usunięty */ }
+  }
+});
+
+// Bez własnych handlerów sygnały zabijają proces z pominięciem 'exit' (i
+// sprzątania blokady). Kody 128+N jak przy domyślnej obsłudze, więc
+// start-bot.command reaguje tak samo jak wcześniej.
+for (const [signal, number] of [['SIGHUP', 1], ['SIGINT', 2], ['SIGTERM', 15]]) {
+  process.on(signal, () => {
+    console.log(`Otrzymano ${signal} - kończę.`);
+    process.exit(128 + number);
+  });
 }
 
 const DAILY_DIR = path.join(__dirname, 'daily');
@@ -355,7 +436,56 @@ function icalDeleteById(id) {
   });
 }
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+// Polling startuje dopiero na końcu pliku, po zarejestrowaniu wszystkich
+// handlerów.
+const bot = new TelegramBot(TOKEN, { polling: { autoStart: false } });
+
+// --- Deduplikacja wiadomości ------------------------------------------------
+// Ta sama wiadomość (chat + message_id) przechodzi przez handlery tylko raz,
+// nawet jeśli Telegram dostarczy ją ponownie (np. po restarcie przed
+// potwierdzeniem offsetu). Ostatnie identyfikatory są w data/, żeby przetrwać
+// restart procesu.
+const SEEN_MESSAGES_PATH = path.join(__dirname, 'data', 'bot-seen-messages.json');
+const SEEN_MESSAGES_MAX = 200;
+
+function loadSeenMessages() {
+  try {
+    const list = JSON.parse(fs.readFileSync(SEEN_MESSAGES_PATH, 'utf8'));
+    return Array.isArray(list) ? list.slice(-SEEN_MESSAGES_MAX) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+const seenMessageKeys = loadSeenMessages();
+const seenMessageSet = new Set(seenMessageKeys);
+
+function markMessageSeen(key) {
+  seenMessageKeys.push(key);
+  seenMessageSet.add(key);
+  while (seenMessageKeys.length > SEEN_MESSAGES_MAX) {
+    seenMessageSet.delete(seenMessageKeys.shift());
+  }
+  try {
+    fs.writeFileSync(SEEN_MESSAGES_PATH, JSON.stringify(seenMessageKeys));
+  } catch (err) {
+    console.error('Nie udało się zapisać listy przetworzonych wiadomości:', err.message);
+  }
+}
+
+const processUpdateOnce = bot.processUpdate.bind(bot);
+bot.processUpdate = (update) => {
+  const msg = update && update.message;
+  if (msg && msg.chat && msg.message_id !== undefined) {
+    const key = `${msg.chat.id}:${msg.message_id}`;
+    if (seenMessageSet.has(key)) {
+      console.log(`Pominięto duplikat wiadomości ${msg.message_id} (update ${update.update_id}).`);
+      return;
+    }
+    markMessageSeen(key);
+  }
+  processUpdateOnce(update);
+};
 
 function isoDateFor(d) {
   const year = d.getFullYear();
@@ -1019,7 +1149,12 @@ bot.on('polling_error', (err) => {
   clearTimeout(connection.stableTimer);
   if (!connection.offlineSince) connection.offlineSince = Date.now();
   console.error(`Polling error: ${err.message} - wstrzymuję polling, próba za ${connection.backoffMs / 1000} s`);
-  bot.stopPolling({ cancel: true })
+  // Bez { cancel: true }: w node-telegram-bot-api 0.66 stop z cancel nie
+  // ustawia flagi _abort, więc przerwana pętla getUpdates planuje kolejne
+  // zapytanie, a startPolling dokłada drugą. Każdy błąd sieci dodawał pętlę -
+  // stąd 409 Conflict w jednym procesie i kilka odpowiedzi na jedną wiadomość
+  // (18.10: 7x "Zapisano dzień"). Zwykły stop kończy pętlę po bieżącym zapytaniu.
+  bot.stopPolling()
     .catch(() => {})
     .finally(scheduleReconnect);
 });
@@ -1048,7 +1183,13 @@ function scheduleReconnect() {
       connection.offlineSince = null;
       connection.backoffMs = POLL_BACKOFF_MIN_MS;
     }, POLL_STABLE_MS);
-    bot.startPolling({ restart: true }).catch((err) => {
+    checkHandlersRegisteredOnce();
+    if (bot.isPolling()) {
+      console.error('Polling nadal działa - nie uruchamiam drugiej pętli getUpdates.');
+      return;
+    }
+    // restart: false - restart w bibliotece też przerywa przez cancel (patrz wyżej).
+    bot.startPolling({ restart: false }).catch((err) => {
       console.error('Nie udało się wznowić pollingu:', err.message);
     });
   }, connection.backoffMs);
@@ -1204,4 +1345,29 @@ bot.setMyCommands(BOT_COMMANDS).catch((err) => {
   console.error('Nie udało się ustawić listy komend:', err.message);
 });
 
-console.log('Bot Telegram uruchomiony i nasłuchuje...');
+// Handlery są rejestrowane raz, przy ładowaniu pliku; wznowienie pollingu ich
+// nie dotyka. Liczniki z tej chwili są sprawdzane przy każdym wznowieniu, żeby
+// ewentualne podwójne rejestrowanie od razu było widać w logu.
+// (_textRegexpCallbacks to wewnętrzna lista onText biblioteki.)
+function handlerCounts() {
+  return {
+    onText: bot._textRegexpCallbacks.length,
+    message: bot.listenerCount('message'),
+    polling_error: bot.listenerCount('polling_error'),
+  };
+}
+
+const HANDLER_COUNTS = handlerCounts();
+
+function checkHandlersRegisteredOnce() {
+  const now = handlerCounts();
+  if (JSON.stringify(now) !== JSON.stringify(HANDLER_COUNTS)) {
+    console.error(`Liczba handlerów zmieniła się: ${JSON.stringify(HANDLER_COUNTS)} -> ${JSON.stringify(now)}`);
+  }
+}
+
+bot.startPolling({ restart: false }).catch((err) => {
+  console.error('Nie udało się uruchomić pollingu:', err.message);
+});
+
+console.log(`Bot Telegram uruchomiony i nasłuchuje... (PID ${process.pid}, handlery: ${JSON.stringify(HANDLER_COUNTS)})`);
