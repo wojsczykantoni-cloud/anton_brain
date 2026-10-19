@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const util = require('util');
 const { execFile, execFileSync } = require('child_process');
@@ -1205,6 +1206,50 @@ function fmtDateTime(value) {
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// --- Waga w /status ----------------------------------------------------------
+// Ostatni wpis w weight.json vs data modyfikacji waga.txt w iCloud (Skrót
+// iOS) i ślad ostatniego importu (data/waga_import.json z import_waga.py).
+// Ostrzeżenie, gdy plik jest nowszy niż ostatni wpis, a import go nie wziął -
+// czyli ostatni przebieg nie przetworzył z sukcesem właśnie tej wersji pliku.
+const WAGA_TXT_PATH = path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'waga.txt');
+const WAGA_IMPORT_STATE_PATH = path.join(__dirname, 'data', 'waga_import.json');
+
+function fmtDay(dateStr) {
+  return `${dateStr.slice(8, 10)}.${dateStr.slice(5, 7)}`;
+}
+
+function weightStatusLines() {
+  const dates = loadWeightEntries().map((e) => e && e.date).filter((d) => typeof d === 'string').sort();
+  const lastDate = dates.length ? dates[dates.length - 1] : null;
+  let state = null;
+  try {
+    state = JSON.parse(fs.readFileSync(WAGA_IMPORT_STATE_PATH, 'utf8'));
+  } catch (_) { /* jeszcze nie było importu */ }
+
+  let fileText;
+  let mtime = null;
+  try {
+    mtime = fs.statSync(WAGA_TXT_PATH).mtime;
+    fileText = fmtDateTime(mtime);
+  } catch (_) {
+    const placeholder = path.join(path.dirname(WAGA_TXT_PATH), '.waga.txt.icloud');
+    fileText = fs.existsSync(placeholder) ? 'w iCloud, niepobrany na dysk' : 'brak pliku';
+  }
+  const lines = [`⚖️ Waga: ostatni wpis ${lastDate ? fmtDay(lastDate) : 'brak'} · waga.txt w iCloud: ${fileText}`];
+
+  if (mtime && (!lastDate || isoDateFor(mtime) > lastDate)) {
+    const tookThisFile = state && state.result === 'ok'
+      && state.file_mtime_epoch === Math.floor(mtime.getTime() / 1000);
+    if (!tookThisFile) {
+      const why = state
+        ? `ostatni import ${fmtDateTime(state.checked_at)}: ${state.reason || state.result}`
+        : 'brak śladu importu';
+      lines.push(`⚠️ waga.txt jest nowszy niż ostatni wpis, a import go nie wziął (${why})`);
+    }
+  }
+  return lines;
+}
+
 function fmtDuration(ms) {
   const min = Math.floor(ms / 60000);
   const d = Math.floor(min / 1440);
@@ -1281,6 +1326,7 @@ async function buildStatusText() {
     ? `⚠️ Dane w dashboardzie nieaktualne (najnowsze z ${fmtDateTime(newest)})`
     : `Dane w dashboardzie aktualne (pobrane ${fmtDateTime(newest)})`);
   lines.push(...hevyCsvLines());
+  lines.push(...weightStatusLines());
   lines.push('');
 
   lines.push('Kroki (ostatni przebieg):');
