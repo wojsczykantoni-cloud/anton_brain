@@ -17,5 +17,10 @@ tags: [daily]
 ## 💡 Pomysły / obserwacje
 <!-- luźne notatki, rzeczy do rozwinięcia później -->
 
+## 🔁 Nawyki
+- [ ] Nauka
+- [ ] Czytanie
+- [ ] Cardio 20 min
+
 ## ✅ Recap wieczorny
 <!-- co się udało, co przechodzi na jutro -->

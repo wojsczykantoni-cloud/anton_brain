@@ -34,8 +34,14 @@ range, volume per muscle group, workouts per week, records (best set and
 best e1RM, with those from the last 4 weeks marked) and the last two
 sessions of the same workout title side by side. Working sets = every set
 except warm-ups; each exercise counts toward its primary muscle group only.
-Colors are neutral throughout the nutrition, weight and training tiles - no
-good/bad judgment, just numbers.
+"Nawyki": habits from data/habits.json (scripts/habits.py) - today's state
+as a list, then a 12-week grid (row per habit, cell per day) with the current
+and longest streak and % done over the last 7 / 30 full days. Auto habits
+(steps, sleep, Hevy session, food and weight logged) are computed only here;
+manual ones come from the "Nawyki" checkboxes in daily/YYYY-MM-DD.md.
+
+Colors are neutral throughout the nutrition, weight, training and habit
+tiles - no good/bad judgment, just numbers.
 """
 
 from __future__ import annotations
@@ -47,6 +53,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import habits as hb
 import training_analytics as ta
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -57,6 +64,8 @@ TARGETS_PATH = REPO_ROOT / "data" / "targets.json"
 STATUS_PATH = REPO_ROOT / "data" / "status.json"
 HEVY_DIR = REPO_ROOT / "data" / "hevy"
 HEVY_CONFIG_PATH = REPO_ROOT / "data" / "hevy_config.json"
+HABITS_PATH = REPO_ROOT / "data" / "habits.json"
+DAILY_DIR = REPO_ROOT / "daily"
 OUT_DIR = REPO_ROOT / "Health"
 OUT_PATH = OUT_DIR / "Health Dashboard.html"
 
@@ -1417,6 +1426,177 @@ def build_training_panel(
     )
 
 
+# --------------------------------------------------------------------------
+# Nawyki
+# --------------------------------------------------------------------------
+
+HABIT_WEEKS = 12
+# Najdłuższa seria liczona z ostatniego roku.
+HABIT_HISTORY_DAYS = 365
+HABIT_CELL = 10
+HABIT_GAP = 2
+HABIT_WEEK_GAP = 5
+
+HABIT_STATE_PL = {
+    hb.DONE: "zrobione",
+    hb.MISSED: "niezrobione",
+    hb.UNKNOWN: "brak danych",
+    hb.PENDING: "dziś jeszcze otwarte",
+}
+HABIT_SOURCE_PL = {
+    "steps": "Garmin",
+    "sleep": "Garmin",
+    "workout": "Hevy",
+    "food": "/dzien",
+    "weight": "/waga",
+}
+
+
+def build_habit_sources(
+    records: list[dict[str, Any]],
+    food_by_date: dict[str, dict[str, Any]],
+    weight_entries: list[dict[str, Any]],
+    workouts: list[ta.Workout],
+    start: date,
+    today: date,
+) -> hb.Sources:
+    src = hb.Sources(workout_days={w.day for w in workouts})
+    for r in records:
+        if isinstance(r.get("steps"), (int, float)):
+            src.steps[r["_date"]] = r["steps"]
+        secs = dig(r, "sleep", "total_seconds")
+        if isinstance(secs, (int, float)):
+            src.sleep_hours[r["_date"]] = secs / 3600
+    for key in food_by_date:
+        try:
+            src.food_days.add(date.fromisoformat(key))
+        except ValueError:
+            pass
+    for e in weight_entries:
+        try:
+            if e.get("kg") is not None:
+                src.weight_days.add(date.fromisoformat(e["date"]))
+        except (TypeError, ValueError):
+            pass
+    src.notes = hb.load_note_checkboxes(DAILY_DIR, start, today)
+    return src
+
+
+def _habit_today_detail(h: hb.Habit, src: hb.Sources, today: date) -> str:
+    if h.type == "manual":
+        return f"ręczny · /nawyk {esc(h.name.split()[0].lower())}"
+    if h.source == "steps":
+        v = src.steps.get(today)
+        so_far = f"{_thousands(v)} / {_thousands(h.min)}" if v is not None else "brak danych"
+        return f"auto · Garmin · {so_far}"
+    if h.source == "sleep":
+        v = src.sleep_hours.get(today)
+        return f"auto · Garmin · {fmt_hms(v * 3600) if v is not None else 'brak danych'} / {_fmt_kg(h.min)}h"
+    return f"auto · {HABIT_SOURCE_PL[h.source]}"
+
+
+def build_habits_today_tile(stats: list[hb.HabitStats], src: hb.Sources, today: date) -> str:
+    done = sum(s.states[today] == hb.DONE for s in stats)
+    items = []
+    for s in stats:
+        state = s.states[today]
+        items.append(
+            f'<li class="habit-today-item"><span class="hmark hmark-{state}" title="{HABIT_STATE_PL[state]}"></span>'
+            f'<span class="habit-today-name">{esc(s.habit.name)}</span>'
+            f'<span class="habit-today-detail">{_habit_today_detail(s.habit, src, today)}</span></li>'
+        )
+    body = f'''
+<div class="stat-row">
+  <div class="stat-big">{done}<span class="stat-unit">/ {len(stats)} zrobione</span></div>
+</div>
+<ul class="habit-today">{"".join(items)}</ul>
+'''
+    return _card(f"Dziś ({fmt_short_date(today)})", body, "card-full")
+
+
+def _habit_cells_svg(states: dict[date, str], first_monday: date, today: date) -> str:
+    week_w = 7 * (HABIT_CELL + HABIT_GAP) - HABIT_GAP
+    width = HABIT_WEEKS * week_w + (HABIT_WEEKS - 1) * HABIT_WEEK_GAP
+    rects = []
+    for i in range(HABIT_WEEKS * 7):
+        d = first_monday + timedelta(days=i)
+        if d > today:
+            break
+        week, dow = divmod(i, 7)
+        x = week * (week_w + HABIT_WEEK_GAP) + dow * (HABIT_CELL + HABIT_GAP)
+        state = states.get(d, hb.UNKNOWN)
+        today_cls = " hc-today" if d == today else ""
+        rects.append(
+            f'<rect x="{x}" y="1" width="{HABIT_CELL}" height="{HABIT_CELL}" rx="2" class="hc hc-{state}{today_cls}">'
+            f"<title>{fmt_short_date(d)}: {HABIT_STATE_PL[state]}</title></rect>"
+        )
+    # width/height jako atrybuty (jak przy innych wykresach); CSS skaluje do szerokości.
+    return (
+        f'<svg width="100%" viewBox="0 0 {width} {HABIT_CELL + 2}" class="habit-cells" '
+        f'preserveAspectRatio="xMinYMid meet" role="img" aria-label="Ostatnie {HABIT_WEEKS} tygodni">'
+        + "".join(rects) + "</svg>"
+    )
+
+
+def _fmt_pct(v: float | None) -> str:
+    return f"{v:.0f}%" if v is not None else "—"
+
+
+def build_habits_grid_tile(stats: list[hb.HabitStats], today: date) -> str:
+    first_monday = _week_start(today) - timedelta(weeks=HABIT_WEEKS - 1)
+    week_labels = "".join(
+        f"<span>{fmt_short_date(first_monday + timedelta(weeks=i))}</span>" for i in range(HABIT_WEEKS)
+    )
+    rows = []
+    for s in stats:
+        kind = "auto" if s.habit.type == "auto" else "ręczny"
+        rows.append(
+            f'<div class="habit-row">'
+            f'<div class="habit-name">{esc(s.habit.name)}<span class="habit-kind">{kind}</span></div>'
+            f'<div class="habit-cells-wrap">{_habit_cells_svg(s.states, first_monday, today)}</div>'
+            f'<div class="habit-stats">'
+            f'<span><span class="dim">seria</span> <b>{s.current_streak}</b></span>'
+            f'<span><span class="dim">najdłuższa</span> <b>{s.longest_streak}</b></span>'
+            f'<span><span class="dim">7 dni</span> <b>{_fmt_pct(s.pct_7)}</b></span>'
+            f'<span><span class="dim">30 dni</span> <b>{_fmt_pct(s.pct_30)}</b></span>'
+            f"</div></div>"
+        )
+    legend = (
+        '<div class="legend">'
+        '<span class="legend-item"><i class="hlegend hc-done"></i>zrobione</span>'
+        '<span class="legend-item"><i class="hlegend hc-missed"></i>niezrobione</span>'
+        '<span class="legend-item"><i class="hlegend hc-unknown"></i>brak danych</span>'
+        '<span class="legend-item"><i class="hlegend hc-pending"></i>dziś, jeszcze otwarte</span>'
+        "</div>"
+    )
+    body = f'''
+<div class="habit-row habit-head"><div></div><div class="habit-weeks">{week_labels}</div><div></div></div>
+{"".join(rows)}
+{legend}
+<p class="tile-desc">Kolumny to tygodnie (od poniedziałku), komórka to dzień. Seria: dni z rzędu do dziś
+(otwarte dziś jej nie przerywa); najdłuższa z ostatniego roku. Procent z ostatnich 7 / 30 pełnych dni, bez dni
+bez danych. Automatyczne nawyki liczą się tylko tutaj; ręczne odhaczasz w sekcji „Nawyki” notatki dziennej
+albo przez /nawyk w bocie. Lista nawyków: data/habits.json.</p>
+'''
+    return _card(f"Nawyki — {HABIT_WEEKS} tygodni", body, "card-full")
+
+
+def build_habits_panel(
+    records: list[dict[str, Any]],
+    food_by_date: dict[str, dict[str, Any]],
+    weight_entries: list[dict[str, Any]],
+    workouts: list[ta.Workout],
+    habits: list[hb.Habit],
+) -> str:
+    if not habits:
+        return _empty_card("Nawyki", "Brak nawyków w data/habits.json.", "card-full")
+    today = date.today()
+    start = today - timedelta(days=HABIT_HISTORY_DAYS - 1)
+    src = build_habit_sources(records, food_by_date, weight_entries, workouts, start, today)
+    stats = hb.habit_stats(habits, src, start, today)
+    return build_habits_today_tile(stats, src, today) + build_habits_grid_tile(stats, today)
+
+
 def _card(title: str, body_html: str, extra_class: str = "") -> str:
     cls = f"card {extra_class}".strip()
     return f'<section class="{cls}"><h2>{esc(title)}</h2>{body_html}</section>'
@@ -1714,21 +1894,24 @@ main.layout {
 }
 
 #tab-zdrowie:checked ~ .tabs label[for="tab-zdrowie"],
-#tab-trening:checked ~ .tabs label[for="tab-trening"] {
+#tab-trening:checked ~ .tabs label[for="tab-trening"],
+#tab-nawyki:checked ~ .tabs label[for="tab-nawyki"] {
   background: var(--bg-card);
   color: var(--text);
   border-color: var(--c-neutral);
 }
 
 #tab-zdrowie:focus-visible ~ .tabs label[for="tab-zdrowie"],
-#tab-trening:focus-visible ~ .tabs label[for="tab-trening"] {
+#tab-trening:focus-visible ~ .tabs label[for="tab-trening"],
+#tab-nawyki:focus-visible ~ .tabs label[for="tab-nawyki"] {
   outline: 2px solid var(--c-neutral);
   outline-offset: 2px;
 }
 
 main.panel { display: none; }
 #tab-zdrowie:checked ~ .panel-zdrowie,
-#tab-trening:checked ~ .panel-trening { display: grid; }
+#tab-trening:checked ~ .panel-trening,
+#tab-nawyki:checked ~ .panel-nawyki { display: grid; }
 
 .panel-meta {
   grid-column: 1 / -1;
@@ -1786,7 +1969,8 @@ main.panel { display: none; }
 .empty-msg { color: var(--text-dim); font-size: 0.85rem; margin: 0; }
 
 /* Trening: wide tiles, pickers, tables. */
-.panel-trening > .card { min-width: 0; }
+.panel-trening > .card,
+.panel-nawyki > .card { min-width: 0; }
 
 .card-wide { grid-column: span 2; }
 
@@ -1882,6 +2066,82 @@ main.panel { display: none; }
 .mg-track-target .mg-fill { position: relative; }
 
 .legend-item i.legend-band { background: var(--text-dim); opacity: 0.35; }
+
+/* Nawyki: neutral cells - done is filled, nothing is red or green. */
+.habit-today {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 6px 16px;
+}
+
+.habit-today-item { display: grid; grid-template-columns: 14px 1fr; column-gap: 8px; align-items: center; }
+
+.habit-today-name { font-size: 13px; font-weight: 600; }
+
+.habit-today-detail { grid-column: 2; font-size: 11px; color: var(--text-dim); }
+
+.hmark { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--text-dim); }
+
+.hmark-done { background: var(--c-neutral); border-color: var(--c-neutral); }
+
+.hmark-unknown { border-style: dashed; }
+
+.hmark-missed { border-color: var(--border); }
+
+.habit-row {
+  display: grid;
+  grid-template-columns: 150px 1fr 250px;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.habit-head { border-bottom: 0; padding-bottom: 0; }
+
+.habit-name { font-size: 12px; font-weight: 600; min-width: 0; }
+
+.habit-kind { display: block; font-size: 10px; font-weight: 500; color: var(--text-dim); }
+
+.habit-cells { display: block; width: 100%; height: auto; }
+
+.hc { stroke-width: 1; }
+
+.hc-done { fill: var(--c-neutral); }
+
+.hc-missed { fill: var(--track); }
+
+.hc-unknown { fill: none; stroke: var(--border); stroke-dasharray: 2 2; }
+
+.hc-pending { fill: none; stroke: var(--text-dim); }
+
+.hc-today { stroke: var(--text); stroke-width: 1.5; }
+
+.habit-weeks { display: grid; grid-template-columns: repeat(12, 1fr); font-size: 10px; color: var(--text-dim); }
+
+.habit-stats { display: grid; grid-template-columns: repeat(4, auto); justify-content: end; gap: 10px; font-size: 11px; white-space: nowrap; }
+
+.habit-stats b { font-weight: 600; }
+
+.legend-item i.hlegend { border: 1px solid transparent; }
+
+.legend-item i.hlegend.hc-done { background: var(--c-neutral); }
+
+.legend-item i.hlegend.hc-missed { background: var(--track); }
+
+.legend-item i.hlegend.hc-unknown { border: 1px dashed var(--border); }
+
+.legend-item i.hlegend.hc-pending { border-color: var(--text-dim); }
+
+@media (max-width: 760px) {
+  .habit-row { grid-template-columns: 1fr auto; row-gap: 6px; }
+  .habit-cells-wrap, .habit-weeks { grid-column: 1 / -1; }
+  .habit-head > div:empty { display: none; }
+  .habit-weeks span:nth-child(even) { visibility: hidden; }
+}
 """
 
 
@@ -1893,6 +2153,7 @@ def build_html(
     workouts: list[ta.Workout],
     training_cfg: ta.Config,
     bodyweights: list[tuple[date, float]],
+    habits: list[hb.Habit],
 ) -> str:
     if records:
         layout = (
@@ -1917,6 +2178,7 @@ def build_html(
     sync_text = esc(fmt_dt_pl(sync_dt)) if sync_dt else "brak danych"
     stale_banner = build_stale_banner(records)
     training = build_training_panel(workouts, training_cfg, bodyweights)
+    habits_panel = build_habits_panel(records, food_by_date, weight_entries, workouts, habits)
 
     return f"""<!DOCTYPE html>
 <html lang="pl">
@@ -1929,6 +2191,7 @@ def build_html(
 <body>
 <input type="radio" name="tab" id="tab-zdrowie" class="tab-input" checked>
 <input type="radio" name="tab" id="tab-trening" class="tab-input">
+<input type="radio" name="tab" id="tab-nawyki" class="tab-input">
 {stale_banner}
 <header>
   <h1>Health Dashboard</h1>
@@ -1937,12 +2200,16 @@ def build_html(
 <nav class="tabs" aria-label="Zakładki">
   <label for="tab-zdrowie">Zdrowie</label>
   <label for="tab-trening">Trening</label>
+  <label for="tab-nawyki">Nawyki</label>
 </nav>
 <main class="layout panel panel-zdrowie">
 {layout}
 </main>
 <main class="layout panel panel-trening">
 {training}
+</main>
+<main class="layout panel panel-nawyki">
+{habits_panel}
 </main>
 <script>
 // Obsidian reloads the file after every rebuild - keep the chosen tab.
@@ -1991,8 +2258,9 @@ def main() -> None:
     workouts = ta.load_workouts(HEVY_DIR)
     training_cfg = ta.load_config(HEVY_CONFIG_PATH)
     bodyweights = ta.load_bodyweights(WEIGHT_PATH)
+    habits = hb.load_habits(HABITS_PATH)
     html = build_html(
-        records, food_by_date, weight_entries, targets, workouts, training_cfg, bodyweights
+        records, food_by_date, weight_entries, targets, workouts, training_cfg, bodyweights, habits
     )
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(html, encoding="utf-8")

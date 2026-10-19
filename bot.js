@@ -1315,6 +1315,164 @@ async function buildStatusText() {
   return lines.join('\n');
 }
 
+// --- /nawyk ------------------------------------------------------------------
+// Odhacza ręczny nawyk w sekcji "## 🔁 Nawyki" dzisiejszej (albo wczorajszej)
+// notatki. Nawyki z data/habits.json (te same, które czyta scripts/habits.py);
+// nawyki automatyczne liczy tylko dashboard - tu ich nie zapisujemy. Tylko fs,
+// żadnego shella.
+const HABITS_PATH = path.join(__dirname, 'data', 'habits.json');
+const HABITS_HEADING = '## 🔁 Nawyki';
+const HABITS_HEADING_RE = /^##\s+.*\bNawyki\b/;
+const HABIT_CHECKBOX_RE = /^(\s*[-*]\s+\[)([ xX])(\]\s+)(\S.*?)\s*$/;
+// Te same domyślne nawyki ręczne co w scripts/habits.py i templates/daily.md.
+const DEFAULT_MANUAL_HABITS = [
+  { id: 'nauka', name: 'Nauka' },
+  { id: 'czytanie', name: 'Czytanie' },
+  { id: 'cardio', name: 'Cardio 20 min' },
+];
+const NAWYK_USAGE = 'Format: /nawyk <nazwa> albo /nawyk wczoraj <nazwa>, np. /nawyk czyt.';
+
+function normalizeHabitText(text) {
+  return String(text)
+    .toLowerCase()
+    .replace(/ł/g, 'l')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function loadHabits() {
+  try {
+    const data = JSON.parse(fs.readFileSync(HABITS_PATH, 'utf8'));
+    const list = Array.isArray(data && data.habits) ? data.habits : [];
+    const valid = list.filter((h) => h && String(h.id || '').trim() && String(h.name || '').trim());
+    return {
+      manual: valid.filter((h) => h.type === 'manual').map((h) => ({ id: String(h.id).trim(), name: String(h.name).trim() })),
+      auto: valid.filter((h) => h.type === 'auto').map((h) => ({ id: String(h.id).trim(), name: String(h.name).trim() })),
+    };
+  } catch (_) {
+    return { manual: DEFAULT_MANUAL_HABITS, auto: [] };
+  }
+}
+
+// Fragment pasuje do nazwy albo id; dokładne trafienie wygrywa z częściowymi.
+function matchHabits(habits, fragment) {
+  const q = normalizeHabitText(fragment);
+  const keys = (h) => [normalizeHabitText(h.name), normalizeHabitText(h.id)];
+  const exact = habits.filter((h) => keys(h).includes(q));
+  return exact.length ? exact : habits.filter((h) => keys(h).some((k) => k.includes(q)));
+}
+
+// Etykieta checkboxa należy do nawyku, gdy zaczyna się od jego nazwy albo id
+// (jak label_matches w scripts/habits.py), np. "Czytanie - 30 stron".
+function labelMatchesHabit(habit, label) {
+  const n = normalizeHabitText(label);
+  return [habit.name, habit.id].map(normalizeHabitText).some((k) =>
+    n === k || (n.startsWith(k) && !/[a-z0-9]/.test(n[k.length])));
+}
+
+function habitSectionBounds(lines) {
+  const start = lines.findIndex((line) => HABITS_HEADING_RE.test(line));
+  if (start === -1) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (lines[i].startsWith('## ')) { end = i; break; }
+  }
+  return { start, end };
+}
+
+// Zwraca 'checked' albo 'already'. Brakującą sekcję (starsze notatki) wstawia
+// przed "Recap wieczorny" albo na końcu; brakującą linię nawyku dopisuje.
+function checkHabitInNote(dateStr, habit, manualHabits) {
+  const filePath = ensureDailyNote(dateStr);
+  const lines = fs.readFileSync(filePath, 'utf8').split('\n');
+  let bounds = habitSectionBounds(lines);
+  if (!bounds) {
+    const section = [HABITS_HEADING, ...manualHabits.map((h) => `- [ ] ${h.name}`), ''];
+    const recap = lines.findIndex((line) => line.startsWith('## ') && line.includes('Recap wieczorny'));
+    if (recap === -1) {
+      while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+      lines.push('', ...section);
+    } else {
+      lines.splice(recap, 0, ...section);
+    }
+    bounds = habitSectionBounds(lines);
+  }
+
+  for (let i = bounds.start + 1; i < bounds.end; i++) {
+    const m = lines[i].match(HABIT_CHECKBOX_RE);
+    if (m && labelMatchesHabit(habit, m[4])) {
+      if (m[2] !== ' ') return 'already';
+      lines[i] = `${m[1]}x${m[3]}${m[4]}`;
+      fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
+      return 'checked';
+    }
+  }
+  let insertAt = bounds.end;
+  while (insertAt > bounds.start + 1 && lines[insertAt - 1].trim() === '') insertAt--;
+  lines.splice(insertAt, 0, `- [x] ${habit.name}`);
+  fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
+  return 'checked';
+}
+
+function habitStatusLine(dateStr, manualHabits) {
+  const note = readDailyNote(dateStr);
+  const lines = note ? note.split('\n') : [];
+  const bounds = habitSectionBounds(lines);
+  const checked = (h) => !!bounds && lines.slice(bounds.start + 1, bounds.end).some((line) => {
+    const m = line.match(HABIT_CHECKBOX_RE);
+    return m && m[2] !== ' ' && labelMatchesHabit(h, m[4]);
+  });
+  return manualHabits.map((h) => `${checked(h) ? '☑' : '☐'} ${h.name}`).join('\n');
+}
+
+bot.onText(/^\/nawyk(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
+  if (!isAuthorized(msg)) return;
+  const { manual, auto } = loadHabits();
+  const tokens = (match[1] || '').trim().split(/\s+/).filter(Boolean);
+  let dateStr = todayISO();
+  let dayLabel = 'dziś';
+  if (tokens.length && normalizeHabitText(tokens[0]) === 'wczoraj') {
+    dateStr = isoDateFor(addDays(new Date(), -1));
+    dayLabel = `wczoraj, ${dateStr.slice(8, 10)}.${dateStr.slice(5, 7)}`;
+    tokens.shift();
+  }
+
+  if (!tokens.length) {
+    const list = manual.length ? habitStatusLine(dateStr, manual) : 'Brak nawyków ręcznych w data/habits.json.';
+    await bot.sendMessage(msg.chat.id, `Nawyki (${dayLabel}):\n${list}\n\n${NAWYK_USAGE}`);
+    return;
+  }
+
+  const fragment = tokens.join(' ');
+  const found = matchHabits(manual, fragment);
+  if (found.length !== 1) {
+    let reply;
+    if (found.length > 1) {
+      reply = `Pasuje kilka nawyków: ${found.map((h) => h.name).join(', ')} - doprecyzuj.`;
+    } else if (matchHabits(auto, fragment).length) {
+      reply = `„${matchHabits(auto, fragment)[0].name}” liczy się automatycznie w dashboardzie - nie trzeba go odhaczać.`;
+    } else {
+      reply = `Nie znam nawyku „${fragment}”. Ręczne: ${manual.map((h) => h.name).join(', ') || 'brak'}.`;
+    }
+    await bot.sendMessage(msg.chat.id, reply);
+    return;
+  }
+
+  const habit = found[0];
+  try {
+    const result = checkHabitInNote(dateStr, habit, manual);
+    await bot.sendMessage(
+      msg.chat.id,
+      result === 'already' ? `„${habit.name}” było już odhaczone (${dayLabel}).` : `✅ Odhaczono „${habit.name}” (${dayLabel}).`
+    );
+  } catch (err) {
+    console.error('Błąd /nawyk:', err.message);
+    await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać nawyku.');
+  }
+});
+
 // --- /trening ----------------------------------------------------------------
 // Podsumowanie z scripts/training_analytics.py (te same wyliczenia co zakładka
 // Trening w dashboardzie): ostatnia sesja, ćwiczenia do podniesienia ciężaru,
@@ -1359,6 +1517,7 @@ const BOT_COMMANDS = [
   { command: 'cel', description: 'Ustaw dzienne cele kalorii i makr' },
   { command: 'odswiez', description: 'Odśwież dane (Garmin, Hevy, waga, dashboard)' },
   { command: 'trening', description: 'Podsumowanie treningu (progresja, serie)' },
+  { command: 'nawyk', description: 'Odhacz nawyk (np. /nawyk czytanie, /nawyk wczoraj nauka)' },
   { command: 'status', description: 'Pokaż stan synchronizacji i zadań' },
 ];
 
