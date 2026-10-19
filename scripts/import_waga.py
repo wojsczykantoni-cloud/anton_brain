@@ -89,7 +89,8 @@ class SkipReading(Exception):
 
 
 def log(msg: str, err: bool = False) -> None:
-    print(f"{datetime.now():%Y-%m-%d %H:%M:%S} - {msg}", file=sys.stderr if err else sys.stdout)
+    # flush: kolejność z wyjściem build_dashboard.py (osobny proces) w refresh.log.
+    print(f"{datetime.now():%Y-%m-%d %H:%M:%S} - {msg}", file=sys.stderr if err else sys.stdout, flush=True)
 
 
 def placeholder_path(path: Path) -> Path:
@@ -336,7 +337,6 @@ def main() -> None:
     WEIGHT_PATH.parent.mkdir(parents=True, exist_ok=True)
     WEIGHT_PATH.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
     save_state("ok", None, mtime_epoch, date_str)
-    log(f"Zapisano wagę za {date_str}.")
 
     try:
         subprocess.run(
@@ -345,6 +345,8 @@ def main() -> None:
         )
     except subprocess.CalledProcessError as err:
         log(f"Błąd przebudowy dashboardu: {err}", err=True)
+    # Na końcu: ostatnia linia wyjścia to opis kroku "waga" w /status.
+    log(f"Zapisano wagę za {date_str}.")
 
 
 if __name__ == "__main__":
