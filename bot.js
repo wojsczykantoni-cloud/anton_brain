@@ -139,6 +139,7 @@ const WEIGHT_PATH = path.join(__dirname, 'data', 'weight.json');
 const TARGETS_PATH = path.join(__dirname, 'data', 'targets.json');
 const PYTHON_BIN = path.join(__dirname, '.venv', 'bin', 'python');
 const BUILD_DASHBOARD_SCRIPT = path.join(__dirname, 'scripts', 'build_dashboard.py');
+const TRAINING_SCRIPT = path.join(__dirname, 'scripts', 'training_analytics.py');
 const STATUS_PATH = path.join(__dirname, 'data', 'status.json');
 const GARMIN_DIR = path.join(__dirname, 'data', 'garmin');
 const HEVY_CSV_STATE_PATH = path.join(__dirname, 'data', 'hevy', 'csv_import.json');
@@ -1314,6 +1315,25 @@ async function buildStatusText() {
   return lines.join('\n');
 }
 
+// --- /trening ----------------------------------------------------------------
+// Podsumowanie z scripts/training_analytics.py (te same wyliczenia co zakładka
+// Trening w dashboardzie): ostatnia sesja, ćwiczenia do podniesienia ciężaru,
+// partie z za małą liczbą serii. Skrypt nie podaje ciężarów; do logu trafia
+// tylko kod wyjścia, nie stdout/stderr.
+const TRENING_MAX_LINES = 8;
+
+bot.onText(/^\/trening(?:@\w+)?$/, async (msg) => {
+  if (!isAuthorized(msg)) return;
+  try {
+    const stdout = await execFileP(PYTHON_BIN, [TRAINING_SCRIPT, '--telegram'], { cwd: __dirname, timeout: 60 * 1000 });
+    const text = stdout.trim().split('\n').slice(0, TRENING_MAX_LINES).join('\n');
+    await bot.sendMessage(msg.chat.id, text || 'Brak danych treningowych.');
+  } catch (err) {
+    console.error(`Błąd /trening: training_analytics.py zakończył się kodem ${err.code ?? err.signal ?? '?'}`);
+    await bot.sendMessage(msg.chat.id, '❌ Nie udało się przygotować podsumowania treningu.');
+  }
+});
+
 bot.onText(/^\/status(?:@\w+)?$/, async (msg) => {
   if (!isAuthorized(msg)) return;
   try {
@@ -1338,6 +1358,7 @@ const BOT_COMMANDS = [
   { command: 'waga', description: 'Zapisz wagę' },
   { command: 'cel', description: 'Ustaw dzienne cele kalorii i makr' },
   { command: 'odswiez', description: 'Odśwież dane (Garmin, Hevy, waga, dashboard)' },
+  { command: 'trening', description: 'Podsumowanie treningu (progresja, serie)' },
   { command: 'status', description: 'Pokaż stan synchronizacji i zadań' },
 ];
 
