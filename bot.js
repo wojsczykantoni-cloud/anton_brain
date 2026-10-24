@@ -138,6 +138,7 @@ const TEMPLATE_PATH = path.join(__dirname, 'templates', 'daily.md');
 const FOOD_DIR = path.join(__dirname, 'data', 'food');
 const WEIGHT_PATH = path.join(__dirname, 'data', 'weight.json');
 const TARGETS_PATH = path.join(__dirname, 'data', 'targets.json');
+const GOALS_PATH = path.join(__dirname, 'data', 'goals.json');
 const PYTHON_BIN = path.join(__dirname, '.venv', 'bin', 'python');
 const BUILD_DASHBOARD_SCRIPT = path.join(__dirname, 'scripts', 'build_dashboard.py');
 const TRAINING_SCRIPT = path.join(__dirname, 'scripts', 'training_analytics.py');
@@ -626,6 +627,19 @@ function saveTargets(macros) {
   fs.writeFileSync(TARGETS_PATH, JSON.stringify(record, null, 2), 'utf8');
 }
 
+// Cele kroków / wagi / snu (linie celu w dashboardzie) - osobno od makr z
+// data/targets.json; zapis scala z istniejącymi celami.
+function saveGoal(key, value) {
+  let goals = {};
+  try {
+    const data = JSON.parse(fs.readFileSync(GOALS_PATH, 'utf8'));
+    if (data && typeof data === 'object' && !Array.isArray(data)) goals = data;
+  } catch (_) { /* brak pliku albo uszkodzony - zaczynamy od pustego */ }
+  goals[key] = value;
+  fs.mkdirSync(path.dirname(GOALS_PATH), { recursive: true });
+  fs.writeFileSync(GOALS_PATH, JSON.stringify(goals, null, 2), 'utf8');
+}
+
 function execFileP(cmd, args, options) {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, options || {}, (error, stdout) => {
@@ -916,7 +930,29 @@ bot.onText(/^\/waga(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
 });
 
 const CEL_USAGE =
-  'Format: /cel <kcal> b<białko> w<węgle> t<tłuszcze>, np. /cel 2400 b150 w280 t70.';
+  'Format: /cel <kcal> b<białko> w<węgle> t<tłuszcze> (np. /cel 2400 b150 w280 t70), ' +
+  '/cel kroki 10000, /cel waga 83,5 albo /cel sen 7,5.';
+
+// /cel kroki|waga|sen <liczba>: klucz w data/goals.json, zakres i format odpowiedzi.
+const GOAL_KINDS = {
+  kroki: { key: 'steps', min: 1000, max: 50000, integer: true, reply: (v) => `✅ Cel kroków: ${v} dziennie.` },
+  waga: { key: 'weight', min: WEIGHT_MIN, max: WEIGHT_MAX, reply: (v) => `✅ Cel wagi: ${v} kg.` },
+  sen: { key: 'sleep', min: 4, max: 12, reply: (v) => `✅ Cel snu: ${v} h.` },
+};
+
+// Zwraca { kind, value }, { error } dla złej liczby / zakresu albo null, gdy
+// to nie jest wariant kroki/waga/sen (wtedy działa dotychczasowe /cel makr).
+function parseGoal(raw) {
+  const m = raw.match(/^(kroki|waga|sen)(?:\s+(\S+))?$/i);
+  if (!m) return null;
+  const kind = GOAL_KINDS[m[1].toLowerCase()];
+  const num = m[2] && m[2].match(/^\d+(?:[.,]\d+)?$/) ? parseFloat(m[2].replace(',', '.')) : NaN;
+  if (!(num >= kind.min && num <= kind.max) || (kind.integer && !Number.isInteger(num))) {
+    const unit = kind.integer ? ', liczba całkowita' : '';
+    return { error: `❌ Cel ${m[1].toLowerCase()}: podaj liczbę z zakresu ${kind.min}-${kind.max}${unit}.` };
+  }
+  return { kind, value: num };
+}
 
 bot.onText(/^\/cel(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   if (!isAuthorized(msg)) return;
@@ -924,6 +960,23 @@ bot.onText(/^\/cel(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   const raw = match[1] && match[1].trim();
   if (!raw) {
     await bot.sendMessage(msg.chat.id, CEL_USAGE);
+    return;
+  }
+
+  const goal = parseGoal(raw);
+  if (goal) {
+    if (goal.error) {
+      await bot.sendMessage(msg.chat.id, goal.error);
+      return;
+    }
+    try {
+      saveGoal(goal.kind.key, goal.value);
+      await rebuildDashboardSafe();
+      await bot.sendMessage(msg.chat.id, goal.kind.reply(goal.value));
+    } catch (err) {
+      console.error('Błąd przy zapisie celu:', err.message);
+      await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać celu.');
+    }
     return;
   }
 
@@ -1560,7 +1613,7 @@ const BOT_COMMANDS = [
   { command: 'dzien', description: 'Zapisz podsumowanie dnia (kcal, B, W, T)' },
   { command: 'przenies', description: 'Przenieś dzisiejszy wpis jedzenia na wczoraj' },
   { command: 'waga', description: 'Zapisz wagę' },
-  { command: 'cel', description: 'Ustaw dzienne cele kalorii i makr' },
+  { command: 'cel', description: 'Ustaw cele: makra, kroki, waga, sen' },
   { command: 'odswiez', description: 'Odśwież dane (Garmin, Hevy, waga, dashboard)' },
   { command: 'trening', description: 'Podsumowanie treningu (progresja, serie)' },
   { command: 'nawyk', description: 'Odhacz nawyk (np. /nawyk czytanie, /nawyk wczoraj nauka)' },

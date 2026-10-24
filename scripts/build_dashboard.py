@@ -25,7 +25,11 @@ text never distorts. Below 700 px: 2 columns, scrolling allowed.
 "Zdrowie": Training Readiness, last night's sleep (phase bar + 14 nights),
 resting heart rate, steps (each with a 14-day trend), weight, and 14-day
 calorie / protein / carb bars colored by NUTRITION_BANDS (good / mid / bad,
-always with a ✓ / ! / ✕ glyph next to the color).
+always with a ✓ / ! / ✕ glyph next to the color). The top row and weight
+carry a dashed reference line and one progress line under the number:
+goals from data/goals.json (steps, weight, sleep hours - set with /cel
+kroki|waga|sen), Garmin's "high" readiness threshold, and the 30-day
+resting heart rate average.
 
 "Trening": Hevy data only (computed in scripts/training_analytics.py, also
 used by the bot's /trening): workouts per week, working sets per muscle
@@ -54,6 +58,7 @@ DATA_DIR = REPO_ROOT / "data" / "garmin"
 FOOD_DIR = REPO_ROOT / "data" / "food"
 WEIGHT_PATH = REPO_ROOT / "data" / "weight.json"
 TARGETS_PATH = REPO_ROOT / "data" / "targets.json"
+GOALS_PATH = REPO_ROOT / "data" / "goals.json"
 STATUS_PATH = REPO_ROOT / "data" / "status.json"
 HEVY_DIR = REPO_ROOT / "data" / "hevy"
 HEVY_CONFIG_PATH = REPO_ROOT / "data" / "hevy_config.json"
@@ -67,6 +72,13 @@ OUT_PATH = OUT_DIR / "Health Dashboard.html"
 TREND_DAYS = 14
 WEIGHT_POINTS = 30
 STALE_AFTER = timedelta(hours=24)
+
+# Garmin's "high" Training Readiness starts here.
+READINESS_THRESHOLD = 75
+RHR_AVG_DAYS = 30
+WEIGHT_PACE_DAYS = 7
+# No "goal reached around ..." date further out than this.
+WEIGHT_ETA_MAX_DAYS = 730
 
 # Nutrition bands ("dobre / średnie / złe jedzenie") - the only place the
 # thresholds live. Per macro: the green range and the wider yellow range around
@@ -217,6 +229,21 @@ def load_targets() -> dict[str, Any] | None:
     except (json.JSONDecodeError, OSError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def load_goals() -> dict[str, float]:
+    """{"steps", "weight", "sleep" (hours)} from data/goals.json (/cel
+    kroki|waga|sen); missing or invalid keys are left out."""
+    try:
+        data = json.loads(GOALS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        k: float(v) for k in ("steps", "weight", "sleep")
+        if isinstance(v := data.get(k), (int, float)) and not isinstance(v, bool) and v > 0
+    }
 
 
 def last_n_calendar_days(n: int) -> list[date]:
@@ -430,9 +457,17 @@ def _hover_cols(xs: list[float], ys: list[float | None], tips: list[str]) -> str
     return "".join(out)
 
 
-def _y_axis(ticks: list[float], y_of) -> str:
-    labels = "".join(f'<span style="top:{y_of(t):.2f}%">{_axis_fmt(t)}</span>' for t in ticks)
-    return f'<div class="yaxis">{labels}</div>'
+# A tick label closer than this (in % of the plot height) to a reference
+# label is dropped, so the two never overlap.
+REF_TICK_GAP = 9
+
+
+def _y_axis(ticks: list[float], y_of, ref_labels: str = "", ref_ys: list[float] | None = None) -> str:
+    labels = "".join(
+        f'<span style="top:{y_of(t):.2f}%">{_axis_fmt(t)}</span>' for t in ticks
+        if all(abs(y_of(t) - ry) >= REF_TICK_GAP for ry in ref_ys or [])
+    )
+    return f'<div class="yaxis">{labels}{ref_labels}</div>'
 
 
 def _grid_lines(ticks: list[float], y_of) -> str:
@@ -441,14 +476,35 @@ def _grid_lines(ticks: list[float], y_of) -> str:
     )
 
 
-def chart_line(values: list[float | None], tips: list[str], *, axes: bool = False, aria: str = "Wykres") -> str:
+def _ref_lines(refs: list[tuple[float, str]], y_of, axes: bool) -> tuple[str, str]:
+    """(SVG dashed lines, HTML labels) for reference values (goal,
+    threshold, average). On axis charts the label sits on the Y axis."""
+    lines = "".join(
+        f'<line x1="0" y1="{y_of(v):.2f}" x2="100" y2="{y_of(v):.2f}" class="ref" />' for v, _ in refs
+    )
+    cls = "ref-tick" if axes else "ref-label"
+    labels = "".join(f'<span class="{cls}" style="top:{y_of(v):.2f}%">{esc(text)}</span>' for v, text in refs)
+    return lines, labels
+
+
+def chart_line(
+    values: list[float | None],
+    tips: list[str],
+    *,
+    axes: bool = False,
+    refs: list[tuple[float, str]] | None = None,
+    aria: str = "Wykres",
+) -> str:
     """Line with a gradient fill fading to transparent, stretched to its
     box. axes=False: a sparkline; axes=True: 3-4 light horizontal lines
-    with values on the right. Gaps (None) split the line."""
+    with values on the right. Gaps (None) split the line. refs: (value,
+    label) drawn as thin dashed lines; the scale always includes them."""
     known = [v for v in values if v is not None]
     if not known:
         return EMPTY_CHART
-    lo, hi = min(known), max(known)
+    refs = refs or []
+    lo = min(known + [v for v, _ in refs])
+    hi = max(known + [v for v, _ in refs])
     ticks: list[float] = []
     if axes:
         ticks = _ticks(lo, hi)
@@ -483,16 +539,20 @@ def chart_line(values: list[float | None], tips: list[str], *, axes: bool = Fals
             line = "M" + " L".join(f"{x:.2f},{y:.2f}" for x, y in seg)
             parts.append(f'<path d="{line} L{seg[-1][0]:.2f},100 L{seg[0][0]:.2f},100 Z" fill="url(#{gid})" class="area" />')
             parts.append(f'<path d="{line}" class="line" />')
+    ref_svg, ref_html = _ref_lines(refs, y_of, axes)
+    parts.append(ref_svg)
     parts.append(_hover_cols(xs, ys, tips))
     parts.append("</svg>")
     dots = "".join(f'<span class="pt solo" style="left:{x:.2f}%;top:{y:.2f}%"></span>' for x, y in solos)
     last = next(((x, y) for x, y in zip(reversed(xs), reversed(ys)) if y is not None), None)
     if last:
         dots += f'<span class="pt end" style="left:{last[0]:.2f}%;top:{last[1]:.2f}%"></span>'
-    plot = f'<div class="plot">{"".join(parts)}{dots}<span class="pt hover"></span></div>'
     if not axes:
+        plot = f'<div class="plot">{"".join(parts)}{dots}{ref_html}<span class="pt hover"></span></div>'
         return f'<div class="chart">{plot}</div>'
-    return f'<div class="chart with-axes">{plot}{_y_axis(ticks, y_of)}</div>'
+    plot = f'<div class="plot">{"".join(parts)}{dots}<span class="pt hover"></span></div>'
+    axis = _y_axis(ticks, y_of, ref_html, [y_of(v) for v, _ in refs])
+    return f'<div class="chart with-axes">{plot}{axis}</div>'
 
 
 def chart_bars(values: list[float | None], tips: list[str], statuses: list[str | None], *, aria: str = "Wykres") -> str:
@@ -544,13 +604,22 @@ def chart_bars(values: list[float | None], tips: list[str], statuses: list[str |
 # Cards
 # --------------------------------------------------------------------------
 
-def _card(label: str, value_html: str = "", viz_html: str = "", extra_class: str = "", label_extra: str = "") -> str:
-    """Label + one main number + a chart that takes the rest of the card."""
+def _card(
+    label: str,
+    value_html: str = "",
+    viz_html: str = "",
+    extra_class: str = "",
+    label_extra: str = "",
+    progress: str = "",
+) -> str:
+    """Label + one main number (+ one progress line) + a chart that takes
+    the rest of the card."""
     cls = f"card {extra_class}".strip()
     extra = f'<span class="label-extra">{label_extra}</span>' if label_extra else ""
     value = f'<div class="value">{value_html}</div>' if value_html else ""
+    line = f'<p class="progress">{esc(progress)}</p>' if progress else ""
     viz = f'<div class="viz">{viz_html}</div>' if viz_html else ""
-    return f'<section class="{cls}"><h3 class="label"><span>{esc(label)}</span>{extra}</h3>{value}{viz}</section>'
+    return f'<section class="{cls}"><h3 class="label"><span>{esc(label)}</span>{extra}</h3>{value}{line}{viz}</section>'
 
 
 def _empty_card(label: str, message: str, extra_class: str = "") -> str:
@@ -563,10 +632,14 @@ def _value_text(v: float | None, fmt=_thousands, unit: str = "") -> str:
     return fmt(v) + (_unit(unit) if unit else "")
 
 
-def _daily_series(records: list[dict[str, Any]], getter) -> tuple[list[date], list[float | None]]:
+def _daily_series_n(records: list[dict[str, Any]], getter, n: int) -> tuple[list[date], list[float | None]]:
     by_date = {r["_date"]: getter(r) for r in records}
-    days = last_n_calendar_days(TREND_DAYS)
+    days = last_n_calendar_days(n)
     return days, [v if isinstance(v, (int, float)) else None for v in (by_date.get(d) for d in days)]
+
+
+def _daily_series(records: list[dict[str, Any]], getter) -> tuple[list[date], list[float | None]]:
+    return _daily_series_n(records, getter, TREND_DAYS)
 
 
 def _latest(values: list[float | None]) -> float | None:
@@ -577,15 +650,28 @@ def _latest(values: list[float | None]) -> float | None:
 # Zdrowie
 # --------------------------------------------------------------------------
 
+def _signed(v: float, unit: str = "") -> str:
+    """'+5' / '−3' (typographic minus), no sign for 0."""
+    sign = "+" if v > 0 else "−" if v < 0 else ""
+    return f"{sign}{abs(v):.0f}{unit}"
+
+
 def build_readiness_card(records: list[dict[str, Any]]) -> str:
     days, values = _daily_series(records, lambda r: dig(r, "training_readiness", "score"))
     with_tr = [r for r in records if dig(r, "training_readiness", "score") is not None]
     level = dig(with_tr[-1], "training_readiness", "level") if with_tr else None
     tips = [_tip(_day_label(d), f"{v:.0f}" if v is not None else "brak danych") for d, v in zip(days, values)]
+    latest = _latest(values)
+    progress = ""
+    if latest is not None:
+        diff = round(latest) - READINESS_THRESHOLD
+        progress = (
+            f"+{diff} ponad progiem" if diff > 0 else f"{-diff} poniżej progu" if diff < 0 else "na progu"
+        )
     return _card(
-        "Gotowość", _value_text(_latest(values), lambda v: f"{v:.0f}"),
-        chart_line(values, tips, aria="Gotowość, 14 dni"),
-        label_extra=esc(READINESS_LEVEL_PL.get(level, "")),
+        "Gotowość", _value_text(latest, lambda v: f"{v:.0f}"),
+        chart_line(values, tips, refs=[(READINESS_THRESHOLD, str(READINESS_THRESHOLD))], aria="Gotowość, 14 dni"),
+        label_extra=esc(READINESS_LEVEL_PL.get(level, "")), progress=progress,
     )
 
 
@@ -603,7 +689,7 @@ def _phase_bar(sleep: dict[str, Any]) -> str:
     return f'<div class="phases" role="img" aria-label="Fazy snu">{segs}</div><ul class="phase-legend">{legend}</ul>'
 
 
-def build_sleep_card(records: list[dict[str, Any]]) -> str:
+def build_sleep_card(records: list[dict[str, Any]], goals: dict[str, float]) -> str:
     days, values = _daily_series(records, lambda r: dig(r, "sleep", "total_seconds"))
     with_sleep = [r for r in records if dig(r, "sleep", "total_seconds") is not None]
     if not with_sleep:
@@ -613,23 +699,41 @@ def build_sleep_card(records: list[dict[str, Any]]) -> str:
     end_txt = fmt_local_time(sleep.get("end_local_ms"))
     tips = [_tip(_day_label(d), fmt_hms(v) if v is not None else "brak danych") for d, v in zip(days, values)]
     hours = [v / 3600 if v is not None else None for v in values]
-    viz = _phase_bar(sleep) + chart_line(hours, tips, aria="Sen, 14 nocy")
+    goal = goals.get("sleep")
+    refs, progress = [], ""
+    if goal:
+        refs = [(goal, f"cel {_fmt_kg(goal)}h")]
+        diff_min = round((sleep["total_seconds"] - goal * 3600) / 60)
+        progress = f"{_signed(diff_min)} min do celu" if diff_min < 0 else f"{_signed(diff_min)} min ponad cel"
+    viz = _phase_bar(sleep) + chart_line(hours, tips, refs=refs, aria="Sen, 14 nocy")
     return _card(
         "Sen", _duration_html(sleep["total_seconds"]), viz, "card-sleep",
-        label_extra=f"{start_txt}–{end_txt}" if start_txt and end_txt else "",
+        label_extra=f"{start_txt}–{end_txt}" if start_txt and end_txt else "", progress=progress,
     )
 
 
 def build_rhr_card(records: list[dict[str, Any]]) -> str:
     days, values = _daily_series(records, lambda r: r.get("resting_heart_rate"))
     tips = [_tip(_day_label(d), f"{v:.0f} bpm" if v is not None else "brak danych") for d, v in zip(days, values)]
+    latest = _latest(values)
+    # Average over the last RHR_AVG_DAYS calendar days, or fewer when the
+    # data starts later; no good/bad judgment.
+    window_days, window = _daily_series_n(records, lambda r: r.get("resting_heart_rate"), RHR_AVG_DAYS)
+    known = [(d, v) for d, v in zip(window_days, window) if v is not None]
+    refs, progress = [], ""
+    if known:
+        avg = sum(v for _, v in known) / len(known)
+        span = (date.today() - known[0][0]).days + 1
+        refs = [(avg, f"śr. {avg:.0f}")]
+        if latest is not None:
+            progress = f"{_signed(latest - avg)} bpm vs średnia {span} dni"
     return _card(
-        "Tętno spoczynkowe", _value_text(_latest(values), lambda v: f"{v:.0f}", "bpm"),
-        chart_line(values, tips, aria="Tętno spoczynkowe, 14 dni"),
+        "Tętno spoczynkowe", _value_text(latest, lambda v: f"{v:.0f}", "bpm"),
+        chart_line(values, tips, refs=refs, aria="Tętno spoczynkowe, 14 dni"), progress=progress,
     )
 
 
-def build_steps_card(records: list[dict[str, Any]]) -> str:
+def build_steps_card(records: list[dict[str, Any]], goals: dict[str, float]) -> str:
     days, values = _daily_series(records, lambda r: r.get("steps"))
     # Today is still in progress, so the headline is yesterday's full day.
     yesterday = values[-2] if len(values) > 1 else None
@@ -638,12 +742,38 @@ def build_steps_card(records: list[dict[str, Any]]) -> str:
              f"{_thousands(v)} kroków" if v is not None else "brak danych")
         for d, v in zip(days, values)
     ]
+    goal = goals.get("steps")
+    refs = [(goal, f"cel {_thousands(goal)}")] if goal else []
+    progress = f"{yesterday / goal * 100:.0f}% celu" if goal and yesterday is not None else ""
     return _card(
-        "Kroki", _value_text(yesterday), chart_line(values, tips, aria="Kroki, 14 dni"), label_extra="wczoraj"
+        "Kroki", _value_text(yesterday), chart_line(values, tips, refs=refs, aria="Kroki, 14 dni"),
+        label_extra="wczoraj", progress=progress,
     )
 
 
-def build_weight_card(weight_entries: list[dict[str, Any]]) -> str:
+def _weight_progress(entries: list[tuple[date, float]], goal: float) -> str:
+    """'do celu X kg · ±Y kg/tydz. · ok. DD.MM' - pace from a linear fit of
+    the last WEIGHT_PACE_DAYS days; the date only when the pace points
+    toward the goal."""
+    last_d, last_kg = entries[-1]
+    remaining = goal - last_kg
+    if abs(remaining) < 0.05:
+        return "cel osiągnięty"
+    parts = [f"do celu {_fmt_kg(abs(remaining))} kg"]
+    recent = [(d, kg) for d, kg in entries if d >= last_d - timedelta(days=WEIGHT_PACE_DAYS)]
+    fit = ta.linear_trend(recent)
+    if fit:
+        per_day = fit[1]
+        parts.append(f"{_fmt_delta(per_day * 7)}/tydz.")
+        if per_day * remaining > 0:
+            days = abs(remaining / per_day)
+            if days <= WEIGHT_ETA_MAX_DAYS:
+                eta = last_d + timedelta(days=round(days))
+                parts.append(f"ok. {fmt_short_date(eta)}" + (f".{eta.year}" if eta.year != date.today().year else ""))
+    return " · ".join(parts)
+
+
+def build_weight_card(weight_entries: list[dict[str, Any]], goals: dict[str, float]) -> str:
     entries = []
     for e in weight_entries:
         try:
@@ -654,16 +784,16 @@ def build_weight_card(weight_entries: list[dict[str, Any]]) -> str:
             continue
     if not entries:
         return _empty_card("Waga", "Brak pomiarów")
-    last_d, last_kg = entries[-1]
-    prior = [kg for d, kg in entries if d <= last_d - timedelta(days=7)]
+    last_kg = entries[-1][1]
+    goal = goals.get("weight")
     trend = entries[-WEIGHT_POINTS:]
     chart = chart_line(
         [kg for _, kg in trend], [_tip(_day_label(d), f"{kg:.1f} kg") for d, kg in trend],
-        axes=True, aria="Waga",
+        axes=True, refs=[(goal, f"cel {_fmt_kg(goal)}")] if goal else None, aria="Waga",
     )
     return _card(
         "Waga", _value_text(last_kg, lambda v: f"{v:.1f}", "kg"), chart,
-        label_extra=f"{_fmt_delta(last_kg - prior[-1])} / 7 dni" if prior else "",
+        progress=_weight_progress(entries, goal) if goal else "",
     )
 
 
@@ -722,11 +852,12 @@ def build_health_panel(
     food_by_date: dict[str, dict[str, Any]],
     weight_entries: list[dict[str, Any]],
     bands: dict[str, dict[str, tuple[float, float]]],
+    goals: dict[str, float],
 ) -> str:
     return (
-        build_readiness_card(records) + build_sleep_card(records)
-        + build_rhr_card(records) + build_steps_card(records)
-        + build_weight_card(weight_entries) + build_nutrition_cards(food_by_date, bands)
+        build_readiness_card(records) + build_sleep_card(records, goals)
+        + build_rhr_card(records) + build_steps_card(records, goals)
+        + build_weight_card(weight_entries, goals) + build_nutrition_cards(food_by_date, bands)
     )
 
 
@@ -802,12 +933,16 @@ def build_training_panel(
     weight_entries: list[dict[str, Any]],
     workouts: list[ta.Workout],
     cfg: ta.Config,
+    goals: dict[str, float],
 ) -> str:
     if workouts:
         hevy = build_exercises_card(workouts, cfg) + build_sets_card(workouts, cfg)
     else:
         hevy = _empty_card("Hevy", "Brak treningów. Dodaj HEVY_API_KEY do .env.", "card-big")
-    return hevy + build_workouts_card(workouts) + build_steps_card(records) + build_weight_card(weight_entries)
+    return (
+        hevy + build_workouts_card(workouts)
+        + build_steps_card(records, goals) + build_weight_card(weight_entries, goals)
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1011,11 +1146,12 @@ def build_html(
     workouts: list[ta.Workout],
     training_cfg: ta.Config,
     habits: list[hb.Habit],
+    goals: dict[str, float],
 ) -> str:
     steps = load_status_steps()
     panels = {
-        "zdrowie": build_health_panel(records, food_by_date, weight_entries, bands),
-        "trening": build_training_panel(records, weight_entries, workouts, training_cfg),
+        "zdrowie": build_health_panel(records, food_by_date, weight_entries, bands, goals),
+        "trening": build_training_panel(records, weight_entries, workouts, training_cfg, goals),
         "nawyki": build_habits_panel(records, food_by_date, weight_entries, workouts, habits),
     }
     inputs = "".join(
@@ -1058,7 +1194,9 @@ def main() -> None:
     workouts = ta.load_workouts(HEVY_DIR)
     training_cfg = ta.load_config(HEVY_CONFIG_PATH)
     habits = hb.load_habits(HABITS_PATH)
-    html = build_html(records, food_by_date, weight_entries, bands, workouts, training_cfg, habits)
+    html = build_html(
+        records, food_by_date, weight_entries, bands, workouts, training_cfg, habits, load_goals()
+    )
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(html, encoding="utf-8")
     print(f"Zapisano dashboard: {OUT_PATH} ({len(records)} dni danych, {len(workouts)} treningów, {len(html)} znaków).")
