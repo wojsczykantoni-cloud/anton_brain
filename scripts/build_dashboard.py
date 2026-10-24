@@ -20,8 +20,9 @@ Obsidian's auto-reloads). "Zdrowie", 3-column grid. Row 1: Training
 Readiness ring + per-factor bars (only the factors actually present in the
 data) with a rule-based Polish summary, 14-day steps, resting heart rate
 trend. Row 2: last night's sleep (duration, start/end times, score, phase
-bar), yesterday's nutrition vs. target, weight trend. Row 3: 14-day
-calorie/protein/carb bar charts with a dashed target line.
+bar), yesterday's nutrition vs. target with a day rating, weight trend.
+Rows 3-4: the last 7 days' nutrition rating, 14-day calorie/protein/carb/fat
+bar charts with a dashed target line, and the threshold legend.
 
 "Trening": Hevy data only (data/hevy/; plus data/weight.json for strength
 relative to body weight), computed in scripts/training_analytics.py (also
@@ -40,8 +41,12 @@ and longest streak and % done over the last 7 / 30 full days. Auto habits
 (steps, sleep, Hevy session, food and weight logged) are computed only here;
 manual ones come from the "Nawyki" checkboxes in daily/YYYY-MM-DD.md.
 
-Colors are neutral throughout the nutrition, weight, training and habit
-tiles - no good/bad judgment, just numbers.
+Nutrition is the one place with good/mid/bad colors: every macro value and
+14-day bar is rated against NUTRITION_BANDS (green / yellow / red, always
+with a ✓ / ! / ✕ glyph next to the color), and so are the day (rate_day) and
+the last 7 days (rate_week). Days without a food file stay neutral ("brak
+danych"). Colors are neutral throughout the weight, training and habit tiles -
+no good/bad judgment, just numbers.
 """
 
 from __future__ import annotations
@@ -71,6 +76,32 @@ OUT_PATH = OUT_DIR / "Health Dashboard.html"
 
 TREND_DAYS = 14
 STALE_AFTER = timedelta(hours=24)
+
+# Nutrition bands ("dobre / średnie / złe jedzenie") - the only place the
+# thresholds live. Per macro: the green range and the wider yellow range around
+# it (both inclusive); outside the yellow range is red. "week_kcal" rates the
+# average kcal of the last NUTRITION_WEEK_DAYS days. Any key can be overridden
+# in data/targets.json, e.g. {"bands": {"fat": {"green": [60, 85], "yellow": [50, 100]}}};
+# an invalid override falls back to the default for that key.
+NUTRITION_BANDS: dict[str, dict[str, tuple[float, float]]] = {
+    "kcal": {"green": (2480, 2740), "yellow": (2350, 2870)},
+    "protein": {"green": (170, 210), "yellow": (150, 240)},
+    "fat": {"green": (60, 85), "yellow": (50, 100)},
+    "carbs": {"green": (250, 330), "yellow": (220, 360)},
+    "week_kcal": {"green": (2560, 2660), "yellow": (2450, 2770)},
+}
+NUTRITION_MACROS = ("kcal", "protein", "carbs", "fat")
+NUTRITION_WEEK_DAYS = 7
+
+# Status -> (glyph, short label). The glyph always travels with the color so
+# the state never depends on color alone.
+NUTRITION_STATUS = {
+    "good": ("✓", "w normie"),
+    "mid": ("!", "blisko granicy"),
+    "bad": ("✕", "poza zakresem"),
+}
+DAY_RATING_PL = {"good": "Dobry dzień", "mid": "Średni dzień", "bad": "Zły dzień"}
+WEEK_RATING_PL = {"good": "Dobry tydzień", "mid": "Średni tydzień", "bad": "Zły tydzień"}
 
 MONTHS_PL_GEN = [
     "stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca",
@@ -251,6 +282,106 @@ def load_targets() -> dict[str, Any] | None:
     except (json.JSONDecodeError, OSError):
         return None
     return data if isinstance(data, dict) else None
+
+
+# --------------------------------------------------------------------------
+# Nutrition bands (pure functions - covered by scripts/test_nutrition_bands.py)
+# --------------------------------------------------------------------------
+
+def _valid_range(raw: Any) -> tuple[float, float] | None:
+    if (
+        isinstance(raw, (list, tuple))
+        and len(raw) == 2
+        and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in raw)
+        and raw[0] <= raw[1]
+    ):
+        return (raw[0], raw[1])
+    return None
+
+
+def resolve_bands(targets: dict[str, Any] | None) -> dict[str, dict[str, tuple[float, float]]]:
+    """NUTRITION_BANDS with any valid per-key override from targets["bands"]."""
+    bands = {k: dict(v) for k, v in NUTRITION_BANDS.items()}
+    overrides = (targets or {}).get("bands")
+    if not isinstance(overrides, dict):
+        return bands
+    for key, default in NUTRITION_BANDS.items():
+        o = overrides.get(key)
+        if not isinstance(o, dict):
+            continue
+        green = _valid_range(o.get("green", default["green"]))
+        yellow = _valid_range(o.get("yellow", default["yellow"]))
+        if green and yellow and yellow[0] <= green[0] and green[1] <= yellow[1]:
+            bands[key] = {"green": green, "yellow": yellow}
+    return bands
+
+
+def band_status(value: Any, band: dict[str, tuple[float, float]]) -> str | None:
+    """"good" / "mid" / "bad" for a value against one band, None when missing."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    g_lo, g_hi = band["green"]
+    y_lo, y_hi = band["yellow"]
+    if g_lo <= value <= g_hi:
+        return "good"
+    if y_lo <= value <= y_hi:
+        return "mid"
+    return "bad"
+
+
+def macro_statuses(
+    rec: dict[str, Any] | None, bands: dict[str, dict[str, tuple[float, float]]]
+) -> dict[str, str | None]:
+    return {k: band_status((rec or {}).get(k), bands[k]) for k in NUTRITION_MACROS}
+
+
+def rate_day(
+    rec: dict[str, Any] | None, bands: dict[str, dict[str, tuple[float, float]]] = NUTRITION_BANDS
+) -> str | None:
+    """Day rating from one food record; None when any macro is missing.
+
+    bad:  kcal or protein red, or two or more reds overall.
+    good: kcal and protein green, at most one yellow among fat/carbs, no red.
+    mid:  everything else (e.g. two yellows or one red among fat/carbs, or a
+          yellow kcal/protein).
+    """
+    s = macro_statuses(rec, bands)
+    if any(v is None for v in s.values()):
+        return None
+    if s["kcal"] == "bad" or s["protein"] == "bad" or list(s.values()).count("bad") >= 2:
+        return "bad"
+    side = [s["fat"], s["carbs"]]
+    if s["kcal"] == "good" and s["protein"] == "good" and "bad" not in side and side.count("mid") <= 1:
+        return "good"
+    return "mid"
+
+
+def rate_week(
+    food_by_date: dict[str, dict[str, Any]],
+    end: date,
+    bands: dict[str, dict[str, tuple[float, float]]] = NUTRITION_BANDS,
+    days: int = NUTRITION_WEEK_DAYS,
+) -> dict[str, Any]:
+    """Rates the `days` calendar days ending at `end` (inclusive) by average
+    kcal over the days that have it. Days without a food file count as
+    "no data", never as bad."""
+    window = [end - timedelta(days=i) for i in range(days - 1, -1, -1)]
+    per_day = [(d, rate_day(food_by_date.get(d.isoformat()), bands)) for d in window]
+    kcals = [
+        k for d in window
+        if isinstance(k := (food_by_date.get(d.isoformat()) or {}).get("kcal"), (int, float))
+    ]
+    avg = sum(kcals) / len(kcals) if kcals else None
+    counts = {"good": 0, "mid": 0, "bad": 0, None: 0}
+    for _, r in per_day:
+        counts[r] += 1
+    return {
+        "days": per_day,
+        "avg_kcal": avg,
+        "kcal_days": len(kcals),
+        "status": band_status(avg, bands["week_kcal"]),
+        "counts": counts,
+    }
 
 
 def last_n_calendar_days(n: int) -> list[date]:
@@ -487,6 +618,10 @@ BAR_LABEL_MIN_GAP = 4
 # line - below this, a bar whose value sits close to the target would
 # otherwise print its label right through the dashes.
 BAR_LABEL_TARGET_GAP = 8
+# Status glyph (✓ / ! / ✕) drawn inside the bar near its base; bars shorter
+# than BAR_GLYPH_MIN_H get it just above their top instead.
+BAR_GLYPH_FONT_SIZE = 8
+BAR_GLYPH_MIN_H = 12
 
 
 def nice_axis_top(values: list[float | None], target: float | None, step: float) -> float:
@@ -512,7 +647,11 @@ def svg_bar_chart(
     y_fmt: str = "{:.0f}",
     target: float | None = None,
     y_top: float | None = None,
+    statuses: list[str | None] | None = None,
 ) -> str:
+    """With `statuses` (one NUTRITION_STATUS key per value), each bar is
+    colored by its status and carries the status glyph, every bar gets a
+    hover tooltip, and days without data get a neutral "brak danych" mark."""
     non_null_idx = [i for i, v in enumerate(values) if v is not None]
     if not non_null_idx:
         return '<p class="empty-msg">Brak danych do wykresu.</p>'
@@ -575,15 +714,34 @@ def svg_bar_chart(
     label_idx_set = set(_label_indices(n))
     for i, v in enumerate(values):
         x = PAD_L + slot_w * i + (slot_w - bar_w) / 2
+        status = statuses[i] if statuses else None
         if v is not None:
             bar_h = (v / scale_max) * inner_h if scale_max else 0
             y = PAD_T + inner_h - bar_h
-            parts.append(
-                f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" '
-                f'rx="2" fill="{color}" />'
-            )
+            glyph_above = False
+            if status in NUTRITION_STATUS:
+                glyph, word = NUTRITION_STATUS[status]
+                parts.append(
+                    f'<g class="bar-st"><title>{esc(labels[i])}: {v:.0f}{esc(unit)} · {glyph} {word}</title>'
+                    f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" '
+                    f'rx="2" fill="var(--st-{status})" />'
+                )
+                glyph_above = bar_h < BAR_GLYPH_MIN_H
+                if glyph_above:
+                    gy, gcls = y - 3, f"st-text-{status}"
+                else:
+                    gy, gcls = PAD_T + inner_h - 3, "bar-glyph"
+                parts.append(
+                    f'<text x="{x + bar_w / 2:.1f}" y="{gy:.1f}" font-size="{BAR_GLYPH_FONT_SIZE}" '
+                    f'font-weight="700" class="{gcls}" text-anchor="middle">{glyph}</text></g>'
+                )
+            else:
+                parts.append(
+                    f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" '
+                    f'rx="2" fill="{color}" />'
+                )
             if i in value_label_idx:
-                label_y = y - 4
+                label_y = y - 4 - (BAR_GLYPH_FONT_SIZE if glyph_above else 0)
                 if ty is not None and abs(label_y - ty) < BAR_LABEL_TARGET_GAP:
                     # Always resolve the collision by moving above the line, never
                     # below it: at this chart scale the gap between the target line
@@ -596,6 +754,13 @@ def svg_bar_chart(
                     f'<text x="{x + bar_w / 2:.1f}" y="{label_y:.1f}" font-size="{BAR_LABEL_FONT_SIZE}" '
                     f'class="axis-label" text-anchor="middle">{v:.0f}</text>'
                 )
+        elif statuses is not None:
+            parts.append(
+                f'<g><title>{esc(labels[i])}: brak danych</title>'
+                f'<line x1="{x + 1:.1f}" y1="{PAD_T + inner_h - 1:.1f}" x2="{x + bar_w - 1:.1f}" '
+                f'y2="{PAD_T + inner_h - 1:.1f}" stroke-width="2" stroke-dasharray="2 2" class="bar-missing" />'
+                f'</g>'
+            )
         if i in label_idx_set:
             parts.append(
                 f'<text x="{x + bar_w / 2:.1f}" y="{CHART_H - 4}" font-size="9" class="axis-label" '
@@ -738,14 +903,41 @@ def build_readiness_description(score: Any, level: Any, factors: dict[str, Any])
     return f"{sentence1} {sentence2}"
 
 
-def nutrient_bar_html(label: str, value: Any, target: Any, unit: str = "g") -> str:
-    value_text = f"{value:.0f}{unit}" if value is not None else "brak danych"
+def status_value_html(text: str, status: str | None) -> str:
+    """A value with its status glyph, colored by status (plain when None)."""
+    if status not in NUTRITION_STATUS:
+        return text
+    glyph, word = NUTRITION_STATUS[status]
+    return (
+        f'<span class="st-text-{status}" title="{word}">'
+        f'<span class="st-glyph" aria-hidden="true">{glyph}</span>{text}'
+        f'<span class="sr-only"> ({word})</span></span>'
+    )
+
+
+def status_badge_html(status: str | None, labels: dict[str, str], empty_label: str) -> str:
+    if status not in NUTRITION_STATUS:
+        return f'<span class="st-badge st-badge-none">{esc(empty_label)}</span>'
+    glyph = NUTRITION_STATUS[status][0]
+    return (
+        f'<span class="st-badge st-badge-{status}">'
+        f'<span aria-hidden="true">{glyph}</span> {esc(labels[status])}</span>'
+    )
+
+
+def nutrient_bar_html(
+    label: str, value: Any, target: Any, unit: str = "g", status: str | None = None
+) -> str:
+    value_text = (
+        status_value_html(f"{value:.0f}{unit}", status) if value is not None else "brak danych"
+    )
+    fill_cls = f"nutrient-fill st-fill-{status}" if status in NUTRITION_STATUS else "nutrient-fill"
     if target:
         frac = max(0.0, min(100.0, (value / target) * 100)) if value is not None else 0.0
         return (
             f'<div class="nutrient-row">'
             f'<span class="nutrient-label">{esc(label)}</span>'
-            f'<span class="nutrient-track"><span class="nutrient-fill" '
+            f'<span class="nutrient-track"><span class="{fill_cls}" '
             f'style="width:{frac:.0f}%"></span></span>'
             f'<span class="nutrient-value">{value_text} <span class="dim">/ {target:.0f}{unit}</span></span>'
             f"</div>"
@@ -886,7 +1078,9 @@ def build_sleep_tile(records: list[dict[str, Any]]) -> str:
 
 
 def build_food_yesterday_tile(
-    food_by_date: dict[str, dict[str, Any]], targets: dict[str, Any] | None
+    food_by_date: dict[str, dict[str, Any]],
+    targets: dict[str, Any] | None,
+    bands: dict[str, dict[str, tuple[float, float]]],
 ) -> str:
     y = date.today() - timedelta(days=1)
     rec = food_by_date.get(y.isoformat())
@@ -897,22 +1091,28 @@ def build_food_yesterday_tile(
         )
 
     kcal = rec.get("kcal")
-    protein = rec.get("protein")
-    carbs = rec.get("carbs")
     kcal_target = (targets or {}).get("kcal")
-    protein_target = (targets or {}).get("protein")
-    carbs_target = (targets or {}).get("carbs")
+    st = macro_statuses(rec, bands)
 
-    kcal_text = f'{kcal:.0f}<span class="stat-unit">kcal</span>' if kcal is not None else "brak danych"
+    kcal_text = (
+        status_value_html(f"{kcal:.0f}", st["kcal"]) + '<span class="stat-unit">kcal</span>'
+        if kcal is not None
+        else "brak danych"
+    )
     kcal_sub = f"Cel: {kcal_target:.0f} kcal" if kcal_target else "&nbsp;"
-    bars = nutrient_bar_html("Białko", protein, protein_target) + nutrient_bar_html(
-        "Węgle", carbs, carbs_target
+    badge = status_badge_html(rate_day(rec, bands), DAY_RATING_PL, "Niepełne dane")
+    bars = "".join(
+        nutrient_bar_html(label, rec.get(key), (targets or {}).get(key), status=st[key])
+        for label, key in (("Białko", "protein"), ("Węgle", "carbs"), ("Tłuszcz", "fat"))
     )
 
     body = f'''
-<div class="stat-row">
-  <div class="stat-big">{kcal_text}</div>
-  <div class="stat-sub">{kcal_sub}</div>
+<div class="stat-row stat-row-split">
+  <div>
+    <div class="stat-big">{kcal_text}</div>
+    <div class="stat-sub">{kcal_sub}</div>
+  </div>
+  {badge}
 </div>
 <div class="nutrient-bars-wrap"><div class="nutrient-bars">{bars}</div></div>
 '''
@@ -974,31 +1174,139 @@ def build_weight_tile(weight_entries: list[dict[str, Any]]) -> str:
 
 
 def build_nutrition_trend_cards(
-    food_by_date: dict[str, dict[str, Any]], targets: dict[str, Any] | None
-) -> str:
+    food_by_date: dict[str, dict[str, Any]],
+    targets: dict[str, Any] | None,
+    bands: dict[str, dict[str, tuple[float, float]]],
+) -> tuple[str, str]:
+    """(kcal + protein cards, carbs + fat cards) - split so the weekly tile
+    and the legend can sit at the start / end of the two nutrition rows."""
     days14 = last_n_calendar_days(TREND_DAYS)
     labels = [fmt_short_date(d) for d in days14]
 
     def series(key: str) -> list[float | None]:
         return [(food_by_date.get(d.isoformat()) or {}).get(key) for d in days14]
 
-    kcal_target = (targets or {}).get("kcal")
-    protein_target = (targets or {}).get("protein")
-    carbs_target = (targets or {}).get("carbs")
-
-    def bar_tile(
-        title: str, values: list[float | None], unit: str, target: float | None, step: float
-    ) -> str:
+    def bar_tile(title: str, key: str, unit: str, step: float) -> str:
+        values = series(key)
         if not any(v is not None for v in values):
             return _card(title, '<div class="empty-fill"><p class="empty-msg">Brak danych.</p></div>')
+        target = (targets or {}).get(key)
         top = nice_axis_top(values, target, step)
-        chart = svg_bar_chart(labels, values, "var(--c-neutral)", unit=unit, target=target, y_top=top)
+        statuses = [band_status(v, bands[key]) for v in values]
+        chart = svg_bar_chart(
+            labels, values, "var(--c-neutral)", unit=unit, target=target, y_top=top, statuses=statuses
+        )
         return _card(title, f'<div class="chart-wrap">{chart}</div>')
 
-    kcal_card = bar_tile("Kalorie — ostatnie 14 dni", series("kcal"), " kcal", kcal_target, step=500)
-    protein_card = bar_tile("Białko — ostatnie 14 dni", series("protein"), " g", protein_target, step=50)
-    carbs_card = bar_tile("Węgle — ostatnie 14 dni", series("carbs"), " g", carbs_target, step=50)
-    return kcal_card + protein_card + carbs_card
+    first = bar_tile("Kalorie — ostatnie 14 dni", "kcal", " kcal", step=500) + bar_tile(
+        "Białko — ostatnie 14 dni", "protein", " g", step=50
+    )
+    second = bar_tile("Węgle — ostatnie 14 dni", "carbs", " g", step=50) + bar_tile(
+        "Tłuszcz — ostatnie 14 dni", "fat", " g", step=25
+    )
+    return first, second
+
+
+def build_nutrition_week_tile(
+    food_by_date: dict[str, dict[str, Any]], bands: dict[str, dict[str, tuple[float, float]]]
+) -> str:
+    end = date.today() - timedelta(days=1)
+    week = rate_week(food_by_date, end, bands)
+    title = f"Odżywianie — ostatnie {NUTRITION_WEEK_DAYS} dni"
+    if week["avg_kcal"] is None:
+        return _card(
+            title, '<div class="empty-fill"><p class="empty-msg">Brak danych z ostatnich 7 dni.</p></div>'
+        )
+
+    g_lo, g_hi = bands["week_kcal"]["green"]
+    avg_text = status_value_html(f"{week['avg_kcal']:.0f}", week["status"])
+    badge = status_badge_html(week["status"], WEEK_RATING_PL, "Brak danych")
+
+    chips = []
+    for d, rating in week["days"]:
+        if rating in NUTRITION_STATUS:
+            glyph, cls, word = NUTRITION_STATUS[rating][0], rating, DAY_RATING_PL[rating]
+        else:
+            has_file = d.isoformat() in food_by_date
+            glyph, cls, word = "–", "none", "niepełne dane" if has_file else "brak danych"
+        chips.append(
+            f'<li class="day-chip day-chip-{cls}" title="{fmt_short_date(d)}: {esc(word)}">'
+            f'<span class="day-chip-glyph" aria-hidden="true">{glyph}</span>'
+            f'<span class="day-chip-date">{fmt_short_date(d)}</span>'
+            f'<span class="sr-only">{esc(word)}</span></li>'
+        )
+
+    c = week["counts"]
+    counts = (
+        f'<span class="st-text-good">✓ dobre: <b>{c["good"]}</b></span>'
+        f'<span class="st-text-mid">! średnie: <b>{c["mid"]}</b></span>'
+        f'<span class="st-text-bad">✕ złe: <b>{c["bad"]}</b></span>'
+    )
+    if c[None]:
+        counts += f'<span class="dim">– brak danych: <b>{c[None]}</b></span>'
+
+    body = f'''
+<div class="stat-row stat-row-split">
+  <div>
+    <div class="stat-big">{avg_text}<span class="stat-unit">kcal / dzień</span></div>
+    <div class="stat-sub">Średnia z {week["kcal_days"]} dni &middot; <span class="nowrap">norma {g_lo:.0f}–{g_hi:.0f}</span></div>
+  </div>
+  {badge}
+</div>
+<ul class="day-chips">{"".join(chips)}</ul>
+<div class="day-counts">{counts}</div>
+'''
+    return _card(title, body)
+
+
+def _band_ranges_text(band: dict[str, tuple[float, float]], unit: str) -> tuple[str, str, str]:
+    """(green, yellow, red) ranges as text, e.g. yellow "2350–2479 · 2741–2870"."""
+    (g_lo, g_hi), (y_lo, y_hi) = band["green"], band["yellow"]
+    whole = all(float(x).is_integer() for x in (g_lo, g_hi, y_lo, y_hi))
+    step = 1 if whole else 0
+
+    def f(x: float) -> str:
+        return f"{x:.0f}" if whole else f"{x:g}"
+
+    yellow = []
+    if y_lo < g_lo:
+        yellow.append(f"{f(y_lo)}–{f(g_lo - step)}")
+    if g_hi < y_hi:
+        yellow.append(f"{f(g_hi + step)}–{f(y_hi)}")
+    return (
+        f"{f(g_lo)}–{f(g_hi)}{unit}",
+        "<br>".join(f"{y}{unit}" for y in yellow) or "—",
+        f"&lt; {f(y_lo)} · &gt; {f(y_hi)}{unit}",
+    )
+
+
+def build_nutrition_legend_tile(bands: dict[str, dict[str, tuple[float, float]]]) -> str:
+    rows = []
+    for label, key, unit in (
+        ("Kalorie", "kcal", ""),
+        ("Białko", "protein", " g"),
+        ("Węgle", "carbs", " g"),
+        ("Tłuszcz", "fat", " g"),
+        ("Średnia 7 dni", "week_kcal", ""),
+    ):
+        green, yellow, red = _band_ranges_text(bands[key], unit)
+        rows.append(
+            f'<tr><th scope="row">{label}</th><td>{green}</td><td>{yellow}</td><td>{red}</td></tr>'
+        )
+    body = f'''
+<table class="band-table">
+  <thead><tr><th></th><th class="st-text-good">✓ w normie</th><th class="st-text-mid">! blisko</th><th class="st-text-bad">✕ poza</th></tr></thead>
+  <tbody>{"".join(rows)}</tbody>
+</table>
+<details class="band-rules">
+  <summary>Jak liczona jest ocena dnia</summary>
+  <p><b class="st-text-good">✓ Dobry</b>: kalorie i białko w normie, w tłuszczu i węglach najwyżej jedno „blisko”.</p>
+  <p><b class="st-text-mid">! Średni</b>: kalorie i białko nie poza zakresem, a w tłuszczu i węglach dwa „blisko” albo jedno „poza” (też: kalorie lub białko „blisko”).</p>
+  <p><b class="st-text-bad">✕ Zły</b>: kalorie lub białko poza zakresem albo dwa i więcej makro poza zakresem.</p>
+  <p class="dim">Tydzień: średnia kcal z dni z danymi (bez dzisiaj). Dni bez wpisu /dzien są pomijane, nie liczą się jako złe. Progi: NUTRITION_BANDS w scripts/build_dashboard.py lub klucz "bands" w data/targets.json.</p>
+</details>
+'''
+    return _card("Progi odżywiania", body)
 
 
 def _week_start(d: date) -> date:
@@ -1630,6 +1938,16 @@ CSS = """
   --warn-bg: #3a2f0b;
   --warn-border: #d4a72c;
   --warn-text: #f5d77a;
+
+  /* Nutrition status (good / mid / bad). Checked against --bg-card: >= 4.5:1
+     as text, and pairwise distinguishable under protan/deutan/tritan
+     simulation. Always paired with a ✓ / ! / ✕ glyph, never color alone. */
+  --st-good: #3cb8a0;
+  --st-mid: #e3ad4c;
+  --st-bad: #f06a7a;
+  --st-good-bg: rgba(60, 184, 160, 0.14);
+  --st-mid-bg: rgba(227, 173, 76, 0.14);
+  --st-bad-bg: rgba(240, 106, 122, 0.14);
 }
 
 @media (prefers-color-scheme: light) {
@@ -1647,6 +1965,13 @@ CSS = """
     --warn-bg: #fff4c2;
     --warn-border: #d4a72c;
     --warn-text: #5c4400;
+
+    --st-good: #0e7a6a;
+    --st-mid: #9a6500;
+    --st-bad: #c0266e;
+    --st-good-bg: rgba(14, 122, 106, 0.10);
+    --st-mid-bg: rgba(154, 101, 0, 0.10);
+    --st-bad-bg: rgba(192, 38, 110, 0.09);
   }
 }
 
@@ -1870,6 +2195,109 @@ main.layout {
 .nutrient-value { font-size: 12px; text-align: right; white-space: nowrap; }
 
 .nutrient-value-wide { grid-column: 2 / span 2; text-align: left; }
+
+/* Nutrition status: colored text + glyph, bar fills, badges, day chips. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.st-text-good { color: var(--st-good); fill: var(--st-good); }
+.st-text-mid { color: var(--st-mid); fill: var(--st-mid); }
+.st-text-bad { color: var(--st-bad); fill: var(--st-bad); }
+
+.st-glyph { font-weight: 700; margin-right: 0.25em; }
+
+.stat-big .st-glyph { font-size: 0.6em; vertical-align: 0.25em; }
+
+.nutrient-fill.st-fill-good { background: var(--st-good); }
+.nutrient-fill.st-fill-mid { background: var(--st-mid); }
+.nutrient-fill.st-fill-bad { background: var(--st-bad); }
+
+.bar-glyph { fill: var(--bg-card); }
+
+.bar-missing { stroke: var(--text-dim); opacity: 0.6; }
+
+.stat-row-split {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.st-badge {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.st-badge-good { color: var(--st-good); border-color: var(--st-good); background: var(--st-good-bg); }
+.st-badge-mid { color: var(--st-mid); border-color: var(--st-mid); background: var(--st-mid-bg); }
+.st-badge-bad { color: var(--st-bad); border-color: var(--st-bad); background: var(--st-bad-bg); }
+.st-badge-none { border-style: dashed; }
+
+.day-chips {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.day-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 0 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.day-chip-glyph { font-size: 13px; font-weight: 700; line-height: 1.1; }
+
+.day-chip-date { font-size: 10px; color: var(--text-dim); }
+
+.day-chip-good { border-color: var(--st-good); background: var(--st-good-bg); color: var(--st-good); }
+.day-chip-mid { border-color: var(--st-mid); background: var(--st-mid-bg); color: var(--st-mid); }
+.day-chip-bad { border-color: var(--st-bad); background: var(--st-bad-bg); color: var(--st-bad); }
+.day-chip-none { border-style: dashed; color: var(--text-dim); }
+
+.day-counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+
+.day-counts b { font-weight: 700; }
+
+.band-table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.band-table th, .band-table td {
+  padding: 3px 6px 3px 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.band-table thead th { font-weight: 650; white-space: nowrap; border-bottom-color: var(--border); }
+
+.band-table tbody th { font-weight: 500; color: var(--text-dim); }
+
+.band-table tbody tr:last-child th, .band-table tbody tr:last-child td { border-bottom: 0; }
+
+.band-rules { margin-top: 8px; font-size: 11px; line-height: 1.4; }
+
+.band-rules summary { cursor: pointer; color: var(--text-dim); }
+
+.band-rules p { margin: 6px 0 0; }
 
 /* Tabs: CSS-only (radio + label), so they work even with scripts off. */
 .tab-input { position: absolute; opacity: 0; pointer-events: none; }
@@ -2168,10 +2596,13 @@ def build_html(
             "aby pobrać dane z Garmin Connect.</p></div>",
         )
 
+    bands = resolve_bands(targets)
+    trend_first, trend_second = build_nutrition_trend_cards(food_by_date, targets, bands)
     layout += build_sleep_tile(records)
-    layout += build_food_yesterday_tile(food_by_date, targets)
+    layout += build_food_yesterday_tile(food_by_date, targets, bands)
     layout += build_weight_tile(weight_entries)
-    layout += build_nutrition_trend_cards(food_by_date, targets)
+    layout += build_nutrition_week_tile(food_by_date, bands) + trend_first
+    layout += trend_second + build_nutrition_legend_tile(bands)
 
     generated = esc(fmt_generated_at())
     sync_dt = latest_sync_dt(records)
