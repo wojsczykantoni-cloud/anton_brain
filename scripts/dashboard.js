@@ -1,7 +1,8 @@
 // Health Dashboard - inlined by scripts/build_dashboard.py.
 // Obsidian reloads the file after every rebuild: keep the chosen tab and
 // pickers in localStorage. Tooltips for every element with data-tip
-// ("when|value").
+// ("when|value"); on line charts the hovered point also gets a dot
+// (data-x / data-y in % of the plot).
 (function () {
   var TAB_KEY = "health-dashboard-tab";
 
@@ -47,6 +48,20 @@
   tip.appendChild(tipValue);
   document.body.appendChild(tip);
   var current = null;
+  var dot = null;
+
+  function moveDot(el) {
+    if (dot) dot.classList.remove("on");
+    dot = null;
+    var y = el.getAttribute("data-y");
+    var plot = el.closest(".plot");
+    if (y === null || !plot) return;
+    dot = plot.querySelector(".pt.hover");
+    if (!dot) return;
+    dot.style.left = el.getAttribute("data-x") + "%";
+    dot.style.top = y + "%";
+    dot.classList.add("on");
+  }
 
   function place(x, y) {
     var r = tip.getBoundingClientRect();
@@ -62,6 +77,7 @@
       var parts = (el.getAttribute("data-tip") || "").split("|");
       tipWhen.textContent = parts[0] || "";
       tipValue.textContent = parts.slice(1).join("|");
+      moveDot(el);
     }
     place(x, y);
     tip.classList.add("on");
@@ -70,6 +86,8 @@
   function hide() {
     current = null;
     tip.classList.remove("on");
+    if (dot) dot.classList.remove("on");
+    dot = null;
   }
 
   function onPointer(e) {
