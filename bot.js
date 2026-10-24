@@ -722,7 +722,7 @@ bot.onText(/^\/event(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   if (!parsed) {
     await bot.sendMessage(
       msg.chat.id,
-      '❌ Nie rozpoznałem daty/godziny w treści. Spróbuj np. „jutro 14:00”, „za 2 dni”, „piątek 10:00” albo daty ISO (2026-03-15 14:00).'
+      '❌ Nie rozpoznałem daty. Np. „jutro 14:00”, „za 2 dni”, „piątek 10:00”, 2026-03-15 14:00.'
     );
     return;
   }
@@ -986,7 +986,7 @@ bot.onText(/^\/przenies(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
 
   try {
     if (!fs.existsSync(srcPath)) {
-      await bot.sendMessage(msg.chat.id, `Brak wpisu jedzenia na dziś (${fmtDayMonth(todayStr)}) - nie ma czego przenosić.`);
+      await bot.sendMessage(msg.chat.id, `Brak wpisu jedzenia z dziś (${fmtDayMonth(todayStr)}).`);
       return;
     }
     const record = JSON.parse(fs.readFileSync(srcPath, 'utf8'));
@@ -1082,7 +1082,7 @@ bot.onText(/^\/odswiez(?:@\w+)?$/, async (msg) => {
   const sinceLast = Date.now() - refreshState.lastStartedAt;
   if (sinceLast < REFRESH_COOLDOWN_MS) {
     const wait = Math.ceil((REFRESH_COOLDOWN_MS - sinceLast) / 1000);
-    await bot.sendMessage(msg.chat.id, `⏳ Odświeżanie najwyżej raz na minutę - spróbuj za ${wait} s.`);
+    await bot.sendMessage(msg.chat.id, `⏳ Kolejne odświeżanie za ${wait} s.`);
     return;
   }
 

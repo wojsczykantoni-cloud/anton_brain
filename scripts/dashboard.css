@@ -382,9 +382,9 @@ h1 {
 .ph-awake { background: var(--text-3); }
 
 .phase-legend {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
   margin: 12px 0 0;
   padding: 0;
   list-style: none;
@@ -392,11 +392,11 @@ h1 {
   color: var(--text-2);
 }
 
-.phase-legend li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.phase-legend li { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 
 .phase-legend i { width: 8px; height: 8px; min-width: 0; flex-shrink: 0; }
 
-.phase-legend b { margin-left: auto; font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
+.phase-legend b { font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
 
 /* Horizontal meters (readiness factors, sets / volume per muscle group) */
 .meters { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }

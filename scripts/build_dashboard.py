@@ -459,17 +459,19 @@ def svg_line(
     labels: list[str] | None = None,
     x_fracs: list[float] | None = None,
     trend: list[float | None] | None = None,
+    size: tuple[int, int] | None = None,
     aria: str = "Wykres",
 ) -> str:
     """Line with a gradient fill fading to transparent. full=False: a
     sparkline (no axes); full=True: 3-5 light horizontal lines with values
     on the right and first/middle/last dates below. Gaps (None) split the
     line; x_fracs (0..1 per point) places points by date instead of evenly;
-    trend is drawn dashed through the same x positions."""
+    trend is drawn dashed through the same x positions; size overrides the
+    full chart's viewBox (keeps axis text small on wide cards)."""
     known = [v for v in values if v is not None]
     if not known:
         return EMPTY_CHART
-    w, h = (CHART_W, CHART_H) if full else (SPARK_W, SPARK_H)
+    w, h = size or ((CHART_W, CHART_H) if full else (SPARK_W, SPARK_H))
     pl, pr, pt, pb = CHART_PAD if full else SPARK_PAD
     scale_vals = known + [v for v in (trend or []) if v is not None]
     lo, hi = min(scale_vals), max(scale_vals)
@@ -914,7 +916,7 @@ def build_e1rm_card(workouts: list[ta.Workout]) -> str:
     label = "Szacowany 1RM"
     series = _e1rm_series(workouts)
     if not series:
-        return _empty_card(label, "Brak serii z ciężarem.", "span-all")
+        return _empty_card(label, "Brak serii z ciężarem.")
     order = sorted(series, key=lambda k: (-len(series[k]), -series[k][-1].day.toordinal(), series[k][-1].name))
     options = []
     panels = []
@@ -939,7 +941,7 @@ def build_e1rm_card(workouts: list[ta.Workout]) -> str:
             [s.best_e1rm for s in pts],
             [_tip(fmt_short_date(s.day), f"{_fmt_kg(s.best_e1rm)} kg · {_fmt_set(s.best_e1rm_set)}") for s in pts],
             full=True, labels=[fmt_short_date(s.day) for s in pts], x_fracs=x_fracs, trend=trend,
-            aria=f"e1RM: {last.name}",
+            size=(400, 190), aria=f"e1RM: {last.name}",
         )
         panels.append(
             f'<div class="picker-panel" data-panel="e1rm" id="{pid}">'
@@ -947,7 +949,7 @@ def build_e1rm_card(workouts: list[ta.Workout]) -> str:
             f'<p class="sub">{esc(" · ".join(sub))}</p><div class="viz">{chart}</div></div>'
         )
     body = f'<div class="card-head">{_picker("e1rm", options, "Ćwiczenie")}</div>' + "".join(panels)
-    return _card(label, body, "span-all card-picker")
+    return _card(label, body, "card-picker")
 
 
 def _bar_rows(rows: list[str]) -> str:
@@ -1122,15 +1124,15 @@ def build_training_panel(
     return (
         banner
         + _grid_html(hero, "grid-hero")
-        + _grid_html(build_exercise_list(workouts, cfg) + build_e1rm_card(workouts), "grid-two")
+        + _grid_html(
+            build_exercise_list(workouts, cfg)
+            + build_e1rm_card(workouts) + build_relative_strength_card(workouts, bodyweights),
+            "grid-two",
+        )
         + _section("Partie")
         + _grid_html(build_weekly_sets_card(workouts, cfg) + build_volume_card(workouts), "grid-two")
         + _section("Historia")
-        + _grid_html(
-            build_relative_strength_card(workouts, bodyweights)
-            + build_records_card(workouts) + build_session_compare_card(workouts),
-            "grid-two",
-        )
+        + _grid_html(build_records_card(workouts) + build_session_compare_card(workouts), "grid-two")
     )
 
 
