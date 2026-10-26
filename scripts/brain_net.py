@@ -12,11 +12,12 @@ Tylko czyta pliki - niczego nie zapisuje i nic nie wysyła.
 import argparse
 import json
 import re
+import os
 import sys
 from datetime import date, datetime
 from pathlib import Path
 
-VAULT = Path(__file__).resolve().parent.parent
+VAULT = Path(os.environ.get("BRAIN_VAULT") or Path(__file__).resolve().parent.parent)
 
 # Foldery techniczne/generowane - nie są "notatkami" sieci.
 SKIP_DIRS = {".git", ".obsidian", ".venv", ".claude", "node_modules", "data", "logs",
@@ -127,7 +128,7 @@ def load_notes():
     notes = {}
     for path in sorted(VAULT.rglob("*.md")):
         rel = path.relative_to(VAULT)
-        if set(rel.parts[:-1]) & SKIP_DIRS:
+        if set(rel.parts[:-1]) & SKIP_DIRS or rel.as_posix() == "CLAUDE.md":
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
         fm, body = parse_frontmatter(text)
@@ -188,8 +189,9 @@ def cmd_review(notes, days):
             if target in backlinks and target != note["name"]:
                 backlinks[target].add(note["path"])
 
+    # inbox/ czeka na brain-ingest - liczony osobno na końcu raportu.
     scope = [n for n in notes.values()
-             if n["top"] not in GENERATED_DIRS | {"daily"}]
+             if n["top"] not in GENERATED_DIRS | {"daily", "inbox"}]
 
     print(f"# Przegląd sieci — {today.isoformat()}\n")
 
@@ -248,7 +250,7 @@ def cmd_review(notes, days):
     lacking = []
     for person in people:
         reasons = []
-        if words(person["body"]) < 15:
+        if words(person["body"]) < 8:
             reasons.append("pusty opis (kim jest, skąd znam)")
         refs = {p for p in backlinks[person["name"]] if not p.startswith("daily/")}
         if not as_list(person["fm"].get("project")) and not refs:
