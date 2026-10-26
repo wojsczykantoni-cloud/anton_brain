@@ -133,6 +133,8 @@ for (const [signal, number] of [['SIGHUP', 1], ['SIGINT', 2], ['SIGTERM', 15]]) 
 }
 
 const DAILY_DIR = path.join(__dirname, 'daily');
+const INBOX_DIR = path.join(__dirname, 'inbox');
+const DEFUDDLE_CLI = path.join(__dirname, 'node_modules', 'defuddle', 'dist', 'cli.js');
 const TEMPLATE_PATH = path.join(__dirname, 'templates', 'daily.md');
 
 const FOOD_DIR = path.join(__dirname, 'data', 'food');
@@ -1161,19 +1163,156 @@ bot.onText(/^\/odswiez(?:@\w+)?$/, async (msg) => {
   });
 });
 
+// --- Inbox -------------------------------------------------------------------
+// Surowe wpisy (zwykła wiadomość, /link) lądują jako osobne pliki w inbox/.
+// Skill brain-ingest dopisuje im potem typ, projekt i linki i przenosi dalej.
+// Nazwa: "YYYY-MM-DD HHmmss <początek treści>.md" - sortuje się chronologicznie.
+function inboxSlug(text) {
+  const slug = text
+    .split('\n')[0]
+    .replace(/[\\/:*?"<>|#^\[\]]/g, ' ') // znaki zakazane w nazwach plików i linkach Obsidiana
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 50)
+    .trim();
+  return slug || 'wpis';
+}
+
+function yamlString(value) {
+  return JSON.stringify(String(value));
+}
+
+function writeInboxItem(type, title, fields, body) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const dateStr = isoDateFor(now);
+  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const stamp = `${dateStr} ${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+  fs.mkdirSync(INBOX_DIR, { recursive: true });
+  const base = `${stamp} ${inboxSlug(title)}`;
+  let filePath = path.join(INBOX_DIR, `${base}.md`);
+  for (let i = 2; fs.existsSync(filePath); i++) {
+    filePath = path.join(INBOX_DIR, `${base} ${i}.md`);
+  }
+
+  const frontmatter = [
+    '---',
+    `type: ${type}`,
+    'status: nowe',
+    ...Object.entries(fields).map(([key, value]) => `${key}: ${yamlString(value)}`),
+    `created: ${dateStr}`,
+    `time: "${timeStr}"`,
+    '---',
+    '',
+  ].join('\n');
+  fs.writeFileSync(filePath, `${frontmatter}${body.replace(/\n*$/, '\n')}`, 'utf8');
+  return filePath;
+}
+
+// Streszczenie bez modelu językowego: opis strony (meta description), a gdy
+// go brak - pierwsze zdania wyciągniętej treści. Nic spoza strony.
+const HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', ndash: '–', mdash: '—' };
+
+function decodeEntities(text) {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, code) => {
+    if (code[0] === '#') {
+      const n = code[1].toLowerCase() === 'x' ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+      return Number.isFinite(n) ? String.fromCodePoint(n) : entity;
+    }
+    return HTML_ENTITIES[code.toLowerCase()] ?? entity;
+  });
+}
+
+function summarizeExtract(description, markdown) {
+  const clean = (t) => decodeEntities(t || '').replace(/\s+/g, ' ').trim();
+  if (clean(description).length >= 40) return clean(description);
+  const text = clean(
+    (markdown || '')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // obrazki
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // linki -> sam tekst
+      .replace(/^#+\s.*$/gm, '') // nagłówki
+  );
+  if (!text) return clean(description);
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  let summary = '';
+  for (const sentence of sentences) {
+    if (summary && (summary + sentence).length > 400) break;
+    summary += sentence;
+    if (summary.length >= 200) break;
+  }
+  return summary.trim().slice(0, 500);
+}
+
+function fetchPage(url) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [DEFUDDLE_CLI, 'parse', url, '--json'],
+      { timeout: 45 * 1000, maxBuffer: 20 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error((stderr || error.message).trim().split('\n')[0]));
+          return;
+        }
+        try {
+          resolve(JSON.parse(stdout));
+        } catch (err) {
+          reject(new Error(`defuddle zwrócił nieczytelny wynik: ${err.message}`));
+        }
+      }
+    );
+  });
+}
+
+bot.onText(/^\/link(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
+  if (!isAuthorized(msg)) return;
+
+  const url = match[1] && match[1].trim().split(/\s+/)[0];
+  if (!url || !/^https?:\/\/\S+$/i.test(url)) {
+    await bot.sendMessage(msg.chat.id, 'Podaj adres, np. /link https://example.com/artykul');
+    return;
+  }
+
+  let page;
+  try {
+    page = await fetchPage(url);
+  } catch (err) {
+    console.error(`/link: nie udało się pobrać ${url}:`, err.message);
+    await bot.sendMessage(msg.chat.id, `❌ Nie udało się pobrać strony: ${err.message}`);
+    return;
+  }
+
+  const title = (page.title || '').trim() || url;
+  const summary = summarizeExtract(page.description, page.contentMarkdown) || '(strona nie zwróciła treści)';
+
+  try {
+    const filePath = writeInboxItem('link', title, { title, source: url }, [
+      `# ${title}`,
+      '',
+      '## Streszczenie',
+      summary,
+      '',
+      `Źródło: ${url}`,
+    ].join('\n'));
+    await bot.sendMessage(msg.chat.id, `🔗 Zapisano w inbox/: ${path.basename(filePath, '.md')}`);
+  } catch (err) {
+    console.error('Błąd przy zapisie linku:', err);
+    await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać linku.');
+  }
+});
+
 bot.on('message', async (msg) => {
   if (!isAuthorized(msg)) return;
   if (!msg.text) return; // interesują nas tylko wiadomości tekstowe
   if (msg.text.startsWith('/')) return; // komendy obsługujemy osobno
 
-  const dateStr = todayISO();
-
   try {
-    appendToSection(dateStr, 'note', msg.text);
-    await bot.sendMessage(msg.chat.id, `✅ Dodano do sekcji „${SECTIONS.note.label}”.`);
+    const filePath = writeInboxItem('wpis', msg.text, { source: 'telegram' }, msg.text);
+    await bot.sendMessage(msg.chat.id, `📥 Zapisano w inbox/: ${path.basename(filePath, '.md')}`);
   } catch (err) {
-    console.error('Błąd przy zapisie notatki:', err);
-    await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać notatki.');
+    console.error('Błąd przy zapisie do inbox:', err);
+    await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać wiadomości.');
   }
 });
 
@@ -1618,6 +1757,7 @@ const BOT_COMMANDS = [
   { command: 'trening', description: 'Podsumowanie treningu (progresja, serie)' },
   { command: 'nawyk', description: 'Odhacz nawyk (np. /nawyk czytanie, /nawyk wczoraj nauka)' },
   { command: 'status', description: 'Pokaż stan synchronizacji i zadań' },
+  { command: 'link', description: 'Zapisz stronę do inbox (tytuł, streszczenie, url)' },
 ];
 
 bot.setMyCommands(BOT_COMMANDS).catch((err) => {
