@@ -75,7 +75,9 @@ ani stron po zalogowaniu (bankowość, poczta, panele kont).
 
 - Zwykła wiadomość (bez komendy) → nowy plik w `inbox/` (`type: wpis`, data, godzina, treść).
 - `/link <url>` → pobiera stronę przez defuddle (`node_modules/defuddle`) i zapisuje w
-  `inbox/` tytuł, streszczenie (opis strony albo jej pierwsze zdania) i `source`.
+  `inbox/` tytuł, `source` i pełną treść artykułu w `## Treść` (ucinaną po ~30 000 znaków).
+  `## Streszczenie` zostaje „do uzupełnienia (brain-ingest)". Gdy pobranie się nie uda
+  albo strona wymaga logowania, zapisuje tylko tytuł i `source`, a bot pisze o tym w odpowiedzi.
 - `/note`, `/priorytet`, `/nauka` dalej dopisują do sekcji dzisiejszej notatki w `daily/`.
 - Restart: zakończ proces z `data/bot.pid` (`kill $(cat data/bot.pid)`) — pętla w
   `scripts/start-bot.command` uruchomi go ponownie po 10 s.

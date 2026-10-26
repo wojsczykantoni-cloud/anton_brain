@@ -1210,8 +1210,7 @@ function writeInboxItem(type, title, fields, body) {
   return filePath;
 }
 
-// Streszczenie bez modelu językowego: opis strony (meta description), a gdy
-// go brak - pierwsze zdania wyciągniętej treści. Nic spoza strony.
+// Tytuły stron przychodzą czasem z encjami HTML (&#8211;, &hellip;).
 const HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', ndash: '–', mdash: '—' };
 
 function decodeEntities(text) {
@@ -1224,24 +1223,49 @@ function decodeEntities(text) {
   });
 }
 
-function summarizeExtract(description, markdown) {
-  const clean = (t) => decodeEntities(t || '').replace(/\s+/g, ' ').trim();
-  if (clean(description).length >= 40) return clean(description);
-  const text = clean(
-    (markdown || '')
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // obrazki
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // linki -> sam tekst
-      .replace(/^#+\s.*$/gm, '') // nagłówki
-  );
-  if (!text) return clean(description);
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-  let summary = '';
-  for (const sentence of sentences) {
-    if (summary && (summary + sentence).length > 400) break;
-    summary += sentence;
-    if (summary.length >= 200) break;
+// /link zapisuje pełną treść artykułu z defuddle (bez reklam i nawigacji),
+// a streszczenie pisze dopiero brain-ingest. Treść dłuższa niż limit jest
+// ucinana na granicy akapitu.
+const LINK_CONTENT_LIMIT = 30000;
+const LINK_SUMMARY_PLACEHOLDER = 'do uzupełnienia (brain-ingest)';
+const LOGIN_URL_RE = /^https?:\/\/(?:mail|poczta|accounts|account|konto|login|auth)\.|[/.?=-](?:login|logowanie|signin|sign-in|zaloguj|oauth|sso)(?:[/.?#&=-]|$)/i;
+const LOGIN_TEXT_RE = new RegExp(`${NB}(?:zaloguj|logowanie|log in|sign in|hasło|password)${NA}`, 'iu');
+
+// Strona logowania albo treść za logowaniem: adres wygląda na logowanie/pocztę
+// albo zamiast artykułu przyszło kilka linijek z formularzem.
+function needsLogin(url, markdown) {
+  if (LOGIN_URL_RE.test(url)) return true;
+  const text = markdown.trim();
+  return text.length < 1500 && LOGIN_TEXT_RE.test(text);
+}
+
+// Nagłówki artykułu schodzą poziom niżej, żeby najwyższy był "###" - wtedy
+// nie mieszają się z sekcjami notatki ("## Streszczenie", "## Treść").
+function demoteHeadings(markdown) {
+  const lines = markdown.split('\n');
+  let inFence = false;
+  let minLevel = 7;
+  const isHeading = [];
+  for (const line of lines) {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    const m = !inFence && line.match(/^(#{1,6})\s/);
+    isHeading.push(Boolean(m));
+    if (m) minLevel = Math.min(minLevel, m[1].length);
   }
-  return summary.trim().slice(0, 500);
+  const shift = minLevel <= 6 ? Math.max(0, 3 - minLevel) : 0;
+  if (!shift) return markdown;
+  return lines
+    .map((line, i) => (isHeading[i] ? line.replace(/^(#{1,6})/, (h) => '#'.repeat(Math.min(6, h.length + shift))) : line))
+    .join('\n');
+}
+
+function limitContent(markdown, url) {
+  if (markdown.length <= LINK_CONTENT_LIMIT) return { text: markdown, truncated: false };
+  let cut = markdown.slice(0, LINK_CONTENT_LIMIT);
+  const paragraphEnd = cut.lastIndexOf('\n\n');
+  if (paragraphEnd > LINK_CONTENT_LIMIT * 0.8) cut = cut.slice(0, paragraphEnd);
+  const note = `> ✂️ Treść ucięta: zapisano ${cut.length.toLocaleString('pl-PL')} z ${markdown.length.toLocaleString('pl-PL')} znaków. Całość: ${url}`;
+  return { text: `${cut.trimEnd()}\n\n${note}`, truncated: true };
 }
 
 function fetchPage(url) {
@@ -1265,6 +1289,34 @@ function fetchPage(url) {
   });
 }
 
+// Pobiera stronę i składa notatkę do inbox/. Bez treści (błąd, logowanie,
+// pusta strona) zostaje tylko tytuł i source, a `problem` mówi dlaczego.
+async function buildLinkNote(url) {
+  let page = null;
+  let problem = null;
+  try {
+    page = await fetchPage(url);
+  } catch (err) {
+    console.error(`/link: nie udało się pobrać ${url}:`, err.message);
+    problem = `nie udało się pobrać strony (${err.message})`;
+  }
+
+  const title = decodeEntities(((page && page.title) || '').trim()) || url;
+  const raw = ((page && page.contentMarkdown) || '').trim();
+  if (!problem && needsLogin(url, raw)) problem = 'strona wymaga logowania';
+  if (!problem && !raw) problem = 'strona nie zwróciła treści';
+
+  const markdown = demoteHeadings(raw);
+  const lines = [`# ${title}`, '', '## Streszczenie', LINK_SUMMARY_PLACEHOLDER, ''];
+  let content = null;
+  if (!problem) {
+    content = limitContent(markdown, url);
+    lines.push('## Treść', content.text, '');
+  }
+  lines.push(`Źródło: ${url}`);
+  return { title, body: lines.join('\n'), problem, content, length: markdown.length };
+}
+
 bot.onText(/^\/link(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
   if (!isAuthorized(msg)) return;
 
@@ -1274,32 +1326,25 @@ bot.onText(/^\/link(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
     return;
   }
 
-  let page;
+  const note = await buildLinkNote(url);
+  let filePath;
   try {
-    page = await fetchPage(url);
-  } catch (err) {
-    console.error(`/link: nie udało się pobrać ${url}:`, err.message);
-    await bot.sendMessage(msg.chat.id, `❌ Nie udało się pobrać strony: ${err.message}`);
-    return;
-  }
-
-  const title = (page.title || '').trim() || url;
-  const summary = summarizeExtract(page.description, page.contentMarkdown) || '(strona nie zwróciła treści)';
-
-  try {
-    const filePath = writeInboxItem('link', title, { title, source: url }, [
-      `# ${title}`,
-      '',
-      '## Streszczenie',
-      summary,
-      '',
-      `Źródło: ${url}`,
-    ].join('\n'));
-    await bot.sendMessage(msg.chat.id, `🔗 Zapisano w inbox/: ${path.basename(filePath, '.md')}`);
+    filePath = writeInboxItem('link', note.title, { title: note.title, source: url }, note.body);
   } catch (err) {
     console.error('Błąd przy zapisie linku:', err);
     await bot.sendMessage(msg.chat.id, '❌ Nie udało się zapisać linku.');
+    return;
   }
+
+  const name = path.basename(filePath, '.md');
+  if (note.problem) {
+    await bot.sendMessage(msg.chat.id, `⚠️ ${note.problem[0].toUpperCase()}${note.problem.slice(1)} - zapisałem w inbox/ tylko tytuł i source: ${name}`);
+    return;
+  }
+  const size = note.content.truncated
+    ? `ucięta do ~${LINK_CONTENT_LIMIT.toLocaleString('pl-PL')} z ${note.length.toLocaleString('pl-PL')} znaków`
+    : `${note.length.toLocaleString('pl-PL')} znaków`;
+  await bot.sendMessage(msg.chat.id, `🔗 Zapisano w inbox/: ${name} (treść: ${size})`);
 });
 
 bot.on('message', async (msg) => {
@@ -1757,7 +1802,7 @@ const BOT_COMMANDS = [
   { command: 'trening', description: 'Podsumowanie treningu (progresja, serie)' },
   { command: 'nawyk', description: 'Odhacz nawyk (np. /nawyk czytanie, /nawyk wczoraj nauka)' },
   { command: 'status', description: 'Pokaż stan synchronizacji i zadań' },
-  { command: 'link', description: 'Zapisz stronę do inbox (tytuł, streszczenie, url)' },
+  { command: 'link', description: 'Zapisz artykuł do inbox (tytuł, treść, url)' },
 ];
 
 bot.setMyCommands(BOT_COMMANDS).catch((err) => {
