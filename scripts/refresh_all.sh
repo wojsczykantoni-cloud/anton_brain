@@ -69,14 +69,14 @@ elif [ "$HEVY_RC" = 0 ]; then
   status_set hevy_csv skip "API Hevy działa - import CSV niepotrzebny"
 fi
 
-# 3. Waga - pusty lub niepoprawny waga.txt to "brak pomiaru", nie błąd (exit 0).
+# 3. Waga - pusty lub niepoprawny waga.txt to "brak pomiaru", nie błąd.
+# ✅ tylko z pomiarem z dziś; starszy to ostrzeżenie (exit 3), bez alertu i naprawy.
 run_logged "$OUT" "$PY" scripts/import_waga.py
-if [ $? -eq 0 ]; then
-  status_set waga ok "$(last_line "$OUT")"
-else
-  status_set waga fail "$(last_line "$OUT")" --fix "cd ~/anton_brain && .venv/bin/python scripts/import_waga.py"
-  FAILED=1
-fi
+case $? in
+  0) status_set waga ok "$(last_line "$OUT")" ;;
+  3) status_set waga warn "$(last_line "$OUT")" ;;
+  *) status_set waga fail "$(last_line "$OUT")" --fix "cd ~/anton_brain && .venv/bin/python scripts/import_waga.py"; FAILED=1 ;;
+esac
 
 # 4. Dashboard - zawsze, także po awarii Garmina (pokaże pasek "Dane nieaktualne").
 run_logged "$OUT" "$PY" scripts/build_dashboard.py

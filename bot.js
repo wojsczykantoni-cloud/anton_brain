@@ -1104,17 +1104,20 @@ function fmtTime(value) {
 
 // Najwyżej 5 linii (po jednej na krok) + jedna komenda naprawcza przy błędzie.
 // Celowo bez treści komunikatów kroków - mogą zawierać wartości zdrowotne.
+// Wyjątek: ostrzeżenie wagi ("Waga: ostatni pomiar DD.MM"), które ma same daty.
 function buildRefreshSummary(startedAt, runError) {
   const steps = readStatusFile().steps || {};
   const startedSec = Math.floor(startedAt / 1000) * 1000;
-  const icon = { ok: '✅', fail: '❌', skip: '⏭️' };
+  const icon = { ok: '✅', warn: '⚠️', fail: '❌', skip: '⏭️' };
   const lines = [];
   let fix = null;
 
   for (const key of REFRESH_STEPS) {
     const st = steps[key];
     if (!st || !st.at || new Date(st.at).getTime() < startedSec) continue;
-    lines.push(`${icon[st.result] || '▫️'} ${STEP_LABELS[key] || key} ${fmtTime(st.at)}`);
+    lines.push(key === 'waga' && st.result === 'warn' && st.message
+      ? `${icon.warn} ${st.message}`
+      : `${icon[st.result] || '▫️'} ${STEP_LABELS[key] || key} ${fmtTime(st.at)}`);
     if (st.result === 'fail' && !fix && st.fix) fix = st.fix;
   }
 
@@ -1448,6 +1451,8 @@ function fmtDateTime(value) {
 // iOS) i ślad ostatniego importu (data/waga_import.json z import_waga.py).
 // Ostrzeżenie, gdy plik jest nowszy niż ostatni wpis, a import go nie wziął -
 // czyli ostatni przebieg nie przetworzył z sukcesem właśnie tej wersji pliku.
+// Krok "Waga" liczony na żywo (jak weight_status w import_waga.py): ✅ tylko
+// z pomiarem z dziś, inaczej ⚠️ z datą ostatniego pomiaru - bez wartości.
 const WAGA_TXT_PATH = path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'waga.txt');
 const WAGA_IMPORT_STATE_PATH = path.join(__dirname, 'data', 'waga_import.json');
 
@@ -1455,13 +1460,31 @@ function fmtDay(dateStr) {
   return `${dateStr.slice(8, 10)}.${dateStr.slice(5, 7)}`;
 }
 
-function weightStatusLines() {
+function lastWeightDate() {
   const dates = loadWeightEntries().map((e) => e && e.date).filter((d) => typeof d === 'string').sort();
-  const lastDate = dates.length ? dates[dates.length - 1] : null;
-  let state = null;
+  return dates.length ? dates[dates.length - 1] : null;
+}
+
+function readWagaImportState() {
   try {
-    state = JSON.parse(fs.readFileSync(WAGA_IMPORT_STATE_PATH, 'utf8'));
-  } catch (_) { /* jeszcze nie było importu */ }
+    return JSON.parse(fs.readFileSync(WAGA_IMPORT_STATE_PATH, 'utf8'));
+  } catch (_) {
+    return null; // jeszcze nie było importu
+  }
+}
+
+function weightStepStatus() {
+  const lastDate = lastWeightDate();
+  if (lastDate && lastDate >= todayISO()) return { result: 'ok', message: 'Waga: pomiar z dziś' };
+  if (!lastDate) return { result: 'warn', message: 'Waga: brak pomiarów' };
+  const state = readWagaImportState();
+  const note = state && state.file_without_new_reading ? ' · plik wagi z iCloud bez nowego pomiaru' : '';
+  return { result: 'warn', message: `Waga: ostatni pomiar ${fmtDay(lastDate)}${note}` };
+}
+
+function weightStatusLines() {
+  const lastDate = lastWeightDate();
+  const state = readWagaImportState();
 
   let fileText;
   let mtime = null;
@@ -1472,7 +1495,7 @@ function weightStatusLines() {
     const placeholder = path.join(path.dirname(WAGA_TXT_PATH), '.waga.txt.icloud');
     fileText = fs.existsSync(placeholder) ? 'w iCloud, niepobrany na dysk' : 'brak pliku';
   }
-  const lines = [`⚖️ Waga: ostatni wpis ${lastDate ? fmtDay(lastDate) : 'brak'} · waga.txt w iCloud: ${fileText}`];
+  const lines = [`⚖️ waga.txt w iCloud: ${fileText}`];
 
   if (mtime && (!lastDate || isoDateFor(mtime) > lastDate)) {
     const tookThisFile = state && state.result === 'ok'
@@ -1567,11 +1590,17 @@ async function buildStatusText() {
   lines.push('');
 
   lines.push('Kroki (ostatni przebieg):');
-  const icon = { ok: '✅', fail: '❌', skip: '⏭️' };
+  const icon = { ok: '✅', warn: '⚠️', fail: '❌', skip: '⏭️' };
   for (const key of [...Object.keys(STEP_LABELS), ...Object.keys(steps).filter((k) => !STEP_LABELS[k])]) {
-    const st = steps[key];
+    let st = steps[key];
     if (!st) {
       lines.push(`▫️ ${STEP_LABELS[key] || key}: brak danych`);
+      continue;
+    }
+    if (key === 'waga' && st.result !== 'fail') {
+      // Na żywo: /waga po przebiegu też się liczy, a po północy ✅ już nie.
+      st = { ...st, ...weightStepStatus() };
+      lines.push(`${icon[st.result]} ${st.message} (sprawdzono ${fmtDateTime(st.at)})`);
       continue;
     }
     lines.push(`${icon[st.result] || '▫️'} ${STEP_LABELS[key] || key} (${fmtDateTime(st.at)}): ${st.message || st.result}`);

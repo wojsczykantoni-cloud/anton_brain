@@ -14,6 +14,14 @@
     try { localStorage.setItem(key, value); } catch (e) {}
   }
 
+  // "pomiar: DD.MM" on the weight card only while it isn't today's reading -
+  // the page may stay open past midnight without a rebuild.
+  var now = new Date();
+  var today = now.getFullYear() + "-" + ("0" + (now.getMonth() + 1)).slice(-2) + "-" + ("0" + now.getDate()).slice(-2);
+  document.querySelectorAll("[data-measured]").forEach(function (el) {
+    el.hidden = el.getAttribute("data-measured") === today;
+  });
+
   var saved = load(TAB_KEY);
   var savedTab = saved && document.getElementById(saved);
   if (savedTab) savedTab.checked = true;

@@ -3,13 +3,15 @@
 
 Usage (from repo root, using the project venv):
 
-    .venv/bin/python scripts/status.py set <step> <ok|fail|skip> [message] [--fix CMD]
+    .venv/bin/python scripts/status.py set <step> <ok|warn|fail|skip> [message] [--fix CMD]
     .venv/bin/python scripts/status.py ok-today <step>   # exit 0 if <step> succeeded today
     .venv/bin/python scripts/status.py alert             # Telegram alert for failed steps
 
 data/status.json keeps, per step (garmin, waga, dashboard, morning_brief, ...),
 the result of the latest run, its message, the time of the last success and a
-concrete fix command. ``alert`` sends ONE Telegram message listing every step
+concrete fix command. "warn" is information, not a failure (e.g. the weight
+step ran fine but there's no reading from today): it counts as a success, is
+never alerted and needs no fix command. ``alert`` sends ONE Telegram message listing every step
 whose latest result is "fail" and that has not been alerted about yet today;
 a step is only marked as alerted once the message actually went out, so an
 alert that failed for lack of network is retried by the next job run.
@@ -82,8 +84,8 @@ def cmd_set(args: list[str]) -> int:
         i = args.index("--fix")
         fix = args[i + 1] if i + 1 < len(args) else None
         args = args[:i] + args[i + 2 :]
-    if len(args) < 2 or args[1] not in ("ok", "fail", "skip"):
-        print("Użycie: status.py set <step> <ok|fail|skip> [message] [--fix CMD]", file=sys.stderr)
+    if len(args) < 2 or args[1] not in ("ok", "warn", "fail", "skip"):
+        print("Użycie: status.py set <step> <ok|warn|fail|skip> [message] [--fix CMD]", file=sys.stderr)
         return 64
     step, result = args[0], args[1]
     message = args[2] if len(args) > 2 else ""
@@ -91,7 +93,7 @@ def cmd_set(args: list[str]) -> int:
     with locked_status() as status:
         entry = status["steps"].setdefault(step, {})
         entry.update({"result": result, "message": message, "at": now_iso(), "fix": fix})
-        if result == "ok":
+        if result in ("ok", "warn"):
             entry["last_success"] = entry["at"]
             # A recovered step may alert again on its next failure today.
             status["alerts_sent"].pop(step, None)

@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any
 
 import habits as hb
+import import_waga as iw
 import training_analytics as ta
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
@@ -784,16 +785,20 @@ def build_weight_card(weight_entries: list[dict[str, Any]], goals: dict[str, flo
             continue
     if not entries:
         return _empty_card("Waga", "Brak pomiarów")
-    last_kg = entries[-1][1]
+    last_day, last_kg = entries[-1]
     goal = goals.get("weight")
     trend = entries[-WEIGHT_POINTS:]
     chart = chart_line(
         [kg for _, kg in trend], [_tip(_day_label(d), f"{kg:.1f} kg") for d, kg in trend],
         axes=True, refs=[(goal, f"cel {_fmt_kg(goal)}")] if goal else None, aria="Waga",
     )
+    # Data pomiaru tylko, gdy nie jest z dziś - skrypt strony ukrywa ją też
+    # po północy, gdy dashboard nie był od tamtej pory przebudowany.
+    hidden = " hidden" if last_day == date.today() else ""
+    measured = f'<span data-measured="{last_day.isoformat()}"{hidden}>pomiar: {fmt_short_date(last_day)}</span>'
     return _card(
         "Waga", _value_text(last_kg, lambda v: f"{v:.1f}", "kg"), chart,
-        progress=_weight_progress(entries, goal) if goal else "",
+        label_extra=measured, progress=_weight_progress(entries, goal) if goal else "",
     )
 
 
@@ -1114,6 +1119,20 @@ def build_stale_pill(records: list[dict[str, Any]], steps: dict[str, Any]) -> st
     )
 
 
+def build_weight_pill() -> str:
+    """'Waga: ostatni pomiar DD.MM' (neutral gray, information - not an
+    alert) when weight.json has no reading from today - the same text as
+    the "waga" step in /status. Rendered hidden for today's reading so the
+    page script can show it after midnight without a rebuild."""
+    last = iw.last_weight_date()
+    message = iw.not_today_message(last)
+    hidden = " hidden" if last == date.today().isoformat() else ""
+    return (
+        f'<span class="info" role="status" data-measured="{esc(last or "")}" '
+        f'data-tip="{_tip("", message)}"{hidden}><span class="info-dot"></span>{esc(message)}</span>'
+    )
+
+
 def build_jarvis(records: list[dict[str, Any]], steps: dict[str, Any]) -> str:
     last = max(
         (dt for dt in (
@@ -1177,6 +1196,7 @@ def build_html(
 <nav class="bar" aria-label="Zakładki">
   <div class="seg"><span class="seg-thumb"></span>{labels}</div>
   {build_stale_pill(records, steps)}
+  {build_weight_pill()}
   {build_jarvis(records, steps)}
 </nav>
 {mains}
