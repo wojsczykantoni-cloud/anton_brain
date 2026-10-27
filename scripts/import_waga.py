@@ -192,7 +192,9 @@ def parse_payload(raw_text: str) -> dict:
     error = None
     for candidate in (text, KG_DECIMAL_COMMA_RE.sub(r"\1.\2", text)):
         try:
-            payload = json.loads(candidate)
+            # strict=False: surowy znak nowej linii/tabulator wewnątrz "date"
+            # (Skrót potrafi go dokleić) nie psuje JSON-a - obcina go parse_waga_date.
+            payload = json.loads(candidate, strict=False)
         except json.JSONDecodeError as err:
             error = error or err
             continue
