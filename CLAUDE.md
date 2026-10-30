@@ -10,13 +10,13 @@ Notatki i rozmowy prowadzimy po polsku.
 |---|---|
 | `inbox/` | Surowe wpisy do przetworzenia: wiadomości z bota, `/link`, klipy z Obsidian Web Clipper. Nic tu nie zostaje na stałe — porządkuje to skill `brain-ingest`. |
 | `projects/` | Projekty z celem i końcem. Każdy projekt to folder `projects/<Projekt>/` z notatką-hubem `<Projekt>.md` (`type: projekt`) i notatkami, które go dotyczą. |
-| `areas/` | Obszary ciągłe, bez końca (studia, finanse, nauka AI…). Tak samo jak projekty: `areas/<Obszar>/<Obszar>.md` (`type: obszar`) + notatki. |
+| `areas/` | Obszary ciągłe, bez końca (studia, finanse, nauka AI…). Tak samo jak projekty: `areas/<Obszar>/<Obszar>.md` (`type: obszar`) + notatki. `areas/Studia/<Przedmiot>/` to hub przedmiotu z notatkami ze studiów. `areas/Trening/` jest **generowany** przez `scripts/hevy_to_obsidian.py` (nie edytuj ręcznie Treningi/ i Cwiczenia/). |
 | `people/` | Jedna notatka na osobę: `people/<Imię Nazwisko>.md` (`type: osoba`) — kim jest, skąd ją znam, w jakich projektach się pojawia. |
 | `daily/` | Notatki dzienne `YYYY-MM-DD.md` z szablonu `templates/daily.md` (pisze do nich bot i morning brief). |
 | `templates/` | Szablony notatek. |
 
 Pozostałe foldery są techniczne albo generowane — nie zakładaj w nich ręcznie notatek:
-`Trening/` i `Health/` (generują skrypty z Hevy/Garmin), `Clippings/` (stare klipy sprzed
+`Health/` (generują skrypty z Garmin), `Clippings/` (stare klipy sprzed
 inboxu), `data/` i `logs/` (poza gitem), `scripts/`, `bot.js` (bot Telegram).
 
 ## Frontmatter
@@ -65,7 +65,7 @@ Pola dodatkowe, gdy mają sens:
 Waga, kalorie i makro, sen, tętno, kroki, choroby, leki, wyniki badań itp. **nie są
 zapisywane w notatkach** (`inbox/`, `projects/`, `areas/`, `people/`, `daily/`).
 Trzymają je wyłącznie `data/` (poza gitem) i komendy bota (`/waga`, `/dzien`, `/cel`), a
-pokazują generowane widoki w `Health/` i `Trening/`.
+pokazują generowane widoki w `Health/` i `areas/Trening/`.
 
 Jeśli wpis w inboxie zawiera dane zdrowotne — nie przenosimy go, tylko zgłaszamy i
 proponujemy usunięcie (albo zapis przez komendę bota). Nie klipujemy stron zdrowotnych

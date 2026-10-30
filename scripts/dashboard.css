@@ -94,7 +94,7 @@ body {
 .seg {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   width: 300px;
   flex-shrink: 0;
   padding: 2px;
@@ -107,7 +107,7 @@ body {
   top: 2px;
   bottom: 2px;
   left: 2px;
-  width: calc((100% - 4px) / 3);
+  width: calc((100% - 4px) / 2);
   border-radius: 6px;
   background: var(--seg-thumb);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
@@ -124,15 +124,12 @@ body {
   user-select: none;
 }
 
-#tab-trening:checked ~ .bar .seg-thumb { transform: translateX(100%); }
-#tab-nawyki:checked ~ .bar .seg-thumb { transform: translateX(200%); }
+#tab-nawyki:checked ~ .bar .seg-thumb { transform: translateX(100%); }
 
 #tab-zdrowie:checked ~ .bar label[for="tab-zdrowie"],
-#tab-trening:checked ~ .bar label[for="tab-trening"],
 #tab-nawyki:checked ~ .bar label[for="tab-nawyki"] { font-weight: 600; }
 
 #tab-zdrowie:focus-visible ~ .bar label[for="tab-zdrowie"],
-#tab-trening:focus-visible ~ .bar label[for="tab-trening"],
 #tab-nawyki:focus-visible ~ .bar label[for="tab-nawyki"] { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
 
 .stale, .info, .jarvis {
@@ -177,7 +174,6 @@ body {
 }
 
 #tab-zdrowie:checked ~ .panel-zdrowie,
-#tab-trening:checked ~ .panel-trening,
 #tab-nawyki:checked ~ .panel-nawyki { display: grid; animation: fade 0.3s ease-out; }
 
 .card-big { grid-column: span 2; grid-row: span 2; }

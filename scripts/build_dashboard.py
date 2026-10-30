@@ -1154,7 +1154,7 @@ def build_jarvis(records: list[dict[str, Any]], steps: dict[str, Any]) -> str:
     )
 
 
-TABS = [("zdrowie", "Zdrowie"), ("trening", "Trening"), ("nawyki", "Nawyki")]
+TABS = [("zdrowie", "Zdrowie"), ("nawyki", "Nawyki")]
 
 
 def build_html(
@@ -1170,7 +1170,6 @@ def build_html(
     steps = load_status_steps()
     panels = {
         "zdrowie": build_health_panel(records, food_by_date, weight_entries, bands, goals),
-        "trening": build_training_panel(records, weight_entries, workouts, training_cfg, goals),
         "nawyki": build_habits_panel(records, food_by_date, weight_entries, workouts, habits),
     }
     inputs = "".join(
