@@ -6,8 +6,10 @@ tags: [cwiczenie, hevy]
 
 # Triceps Rope Pushdown
 
-Najlepsze e1RM (Epley): **36,9 kg**
+Najlepsze e1RM (Epley): **42,7 kg**
 
 | Data | Trening | Serie (kg x powt.) | Tonaz kg | Najlepsze e1RM |
 |---|---|---|---|---|
 | 2026-10-12 | Push | 27x11, 27x11 | 594 | 36,9 |
+| 2026-10-19 | Push A | 31,6x10, 31,6x9 | 600,4 | 42,1 |
+| 2026-10-26 | Push A | 32x10, 32x10 | 640 | 42,7 |
