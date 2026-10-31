@@ -69,6 +69,28 @@ elif [ "$HEVY_RC" = 0 ]; then
   status_set hevy_csv skip "API Hevy działa - import CSV niepotrzebny"
 fi
 
+# 2c. Notatki treningowe w Obsidianie (areas/Trening) z najnowszego CSV z iCloud Drive.
+# Tylko gdy CSV jest nowszy niż poprzednia generacja (data/trening_notes.stamp), żeby nie
+# przepisywać plików bez potrzeby. Błąd to ostrzeżenie (bez alertu): notatki są dodatkiem.
+ICLOUD_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs"
+STAMP="$PROJECT_DIR/data/trening_notes.stamp"
+shopt -s nocaseglob nullglob
+HEVY_CSV="$(ls -t "$ICLOUD_DIR"/*workout_data*.csv "$ICLOUD_DIR"/hevy*.csv 2>/dev/null | head -1)"
+shopt -u nocaseglob nullglob
+if [ -z "$HEVY_CSV" ]; then
+  status_set trening_notes skip "Brak CSV z Hevy w iCloud Drive"
+elif [ -f "$STAMP" ] && [ ! "$HEVY_CSV" -nt "$STAMP" ]; then
+  status_set trening_notes skip "CSV bez zmian od ostatniej generacji notatek"
+else
+  run_logged "$OUT" "$PY" scripts/hevy_to_obsidian.py "$HEVY_CSV" "$PROJECT_DIR"
+  if [ $? -eq 0 ]; then
+    touch "$STAMP"
+    status_set trening_notes ok "$(last_line "$OUT")"
+  else
+    status_set trening_notes warn "$(last_line "$OUT")"
+  fi
+fi
+
 # 3. Waga - pusty lub niepoprawny waga.txt to "brak pomiaru", nie błąd.
 # ✅ tylko z pomiarem z dziś; starszy to ostrzeżenie (exit 3), bez alertu i naprawy.
 run_logged "$OUT" "$PY" scripts/import_waga.py
