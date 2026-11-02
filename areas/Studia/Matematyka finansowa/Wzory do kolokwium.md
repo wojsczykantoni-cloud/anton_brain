@@ -23,14 +23,14 @@ Szczegóły: [[Rachunek czasu]]
 - Przybliżona liczba dni = funkcja DNI.360.
 
 ## 2. Oprocentowanie proste
-Szczegóły: [[Kapitalizacja prosta]]
+Szczegóły: [[Procent prosty]]
 - z dołu: Kn = K0*(1 + n*r)
 - z góry: Kn = K0*(1 - n*d)^(-1)
 - r = (Kn - K0)/(n*K0)
 - d = (Kn - K0)/(n*Kn)
 
 ## 3. Oprocentowanie złożone
-Szczegóły: [[Procent złożony]], [[Kapitalizacja ciągła]]
+Szczegóły: [[Procent złożony]] (w tym kapitalizacja ciągła)
 | Kapitalizacja | z dołu | z góry |
 |---|---|---|
 | zgodna | Kn = K0*(1+r)^n | Kn = K0*(1-d)^(-n) |
