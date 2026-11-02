@@ -25,5 +25,13 @@ Część [[Matematyka finansowa]].
 - Szukana stopa przy kapitalizacji miesięcznej (zad. 14).
 - Dopłata i zmiana kapitalizacji, szukana stopa w drugim okresie (zad. 20; wynik końcowy 38746,71 zł).
 
+## Przekształcenia
+- r = (Kn/K0)^(1/n) - 1
+- r (podokresy) = m*((Kn/K0)^(1/(m*n)) - 1)
+- d = 1 - (K0/Kn)^(1/n)
+- n = LOG(Kn/K0; 1+r) w Excelu
+
 ## Do uzupełnienia
 - Sposób liczenia procentu należnego za wybrany rok (zad. 4).
+
+Wszystkie wzory: [[Wzory do kolokwium]]

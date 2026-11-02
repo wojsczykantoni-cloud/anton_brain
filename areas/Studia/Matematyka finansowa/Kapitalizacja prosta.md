@@ -21,5 +21,11 @@ Część [[Matematyka finansowa]].
 - Kapitalizacja półroczna z półroczną stopą (zad. 9), pożyczka spłacana po kwartale przy stopie miesięcznej (zad. 10).
 - Stopa, przy której kapitał rośnie o 10%, podwaja się, potraja po 6 latach (zad. 11).
 
+## Szukana stopa
+- r = (Kn - K0)/(n*K0)
+- d = (Kn - K0)/(n*Kn)
+
 ## Do uzupełnienia
 - Zasady przeliczania stopy rocznej na okres krótszy/dłuższy w oprocentowaniu prostym.
+
+Wszystkie wzory: [[Wzory do kolokwium]]

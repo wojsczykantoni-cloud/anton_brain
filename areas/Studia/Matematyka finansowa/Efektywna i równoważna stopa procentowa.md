@@ -27,6 +27,12 @@ Część [[Matematyka finansowa]].
 - Wybór najlepszego banku z kapitalizacją z dołu i z góry, kapitał po 9 latach (zad. 6).
 - Zmiana kapitalizacji kwartalnej na półroczną, nowa stopa (zad. 7, 8).
 
+## Dodatkowe wzory
+- Nominalna z efektywnej: r = m*((1+ref)^(1/m) - 1)
+- Intensywność oprocentowania: delta = LN(1 + ref)
+
+Wszystkie wzory: [[Wzory do kolokwium]]
+
 ## Do uzupełnienia
 - Stopa nominalna i realna (inflacja): wzoru i zadań brak w materiałach.
 - Przeciętna stopa procentowa (tytuł zestawu 3): brak wzoru.
