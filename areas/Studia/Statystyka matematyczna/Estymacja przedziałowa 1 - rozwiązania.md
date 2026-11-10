@@ -8,104 +8,103 @@ created: 2026-11-10
 # Estymacja przedziałowa 1 - rozwiązania
 #statystyka #egzamin
 
-Plik źródłowy: `Estymacja_przedzia_owa_1_-_rozw.xlsx` (arkusze Zad.1, Zad.2, Zad. 4, Zad. 6). Pełny zestaw bez rozwiązań: [[Estymacja przedziałowa 1 - zadania]]. Wzory: [[Wzory - estymacja]]. Skrót: [[00 Ściąga - Statystyka]].
+Plik źródłowy: `Estymacja_przedzia_owa_1_-_rozw.xlsx` (arkusze Zad.1, Zad.2, Zad. 4, Zad. 6). Pełny zestaw 9 zadań (bez rozwiązań w pliku): [[Estymacja przedziałowa 1 - zadania]]. Wzory: [[Wzory - estymacja]]. Skrót: [[00 Ściąga - Statystyka]].
 
-**Co to za zadania:** przedział ufności dla **średniej** (zad.1, 2, 4) i dla **frakcji** (zad.6), a do tego wskaźnik precyzji delta (połowa długości przedziału) i względny wskaźnik precyzji wdelta = delta / estymator.
+> [!info] O co chodzi w tych zadaniach
+> Przedział ufności dla **średniej** (zad.1, 2, 4) i dla **frakcji** (zad.6), plus wskaźnik precyzji $\Delta$ (połowa długości przedziału) i względny wskaźnik precyzji $\delta=\Delta/\text{estymator}$. Polecenie w każdym zadaniu kończy się: "Wyznacz wskaźnik precyzji estymacji oraz względny wskaźnik precyzji estymacji".
 
 | Zad. | Dane | Wzór |
 |---|---|---|
-| 1 | dyskonto: xsr = 20%, sigma = 8% (znane), n = 36, gamma = 0,95, rozkład normalny | wzór 1 |
-| 2 | stopa zwrotu: n = 15, xsr = 10,37%, Shat = 3,5%, gamma = 0,92, rozkład normalny | wzór 3 (t) |
-| 4 | odszkodowania: n = 165, xsr = 16 530, Shat = 5542, gamma = 0,95 i 0,99 | wzór 2 |
-| 6 | 34 z 100 kupuje produkt zagraniczny, gamma = 0,95 | przedział dla frakcji |
+| 1 | dyskonto: $\text{xsr}=20\%$, $\sigma=8\%$ (znane), $n=36$, $\gamma=0{,}95$, rozkład normalny | 1 |
+| 2 | stopa zwrotu: $n=15$, $\text{xsr}=10{,}37\%$, $\hat S=3{,}5\%$, $\gamma=0{,}92$, rozkład normalny | 3 |
+| 4 | odszkodowania: $n=165$, $\text{xsr}=16\,530$, $\hat S=5542$, $\gamma=0{,}95$ i $0{,}99$ | 2 |
+| 6 | 34 z 100 konsumentów kupuje produkt zagraniczny, $\gamma=0{,}95$ | frakcja |
+
+## Ze slajdów wklejonych w arkusze
+- **Wskaźnik precyzji** estymacji przedziałowej to połowa rozpiętości przedziału ufności: $\Delta=\dfrac{1}{2}(T_2-T_1)$.
+- **Trzy wzory na przedział dla $m=E(X)$** oraz schemat wyboru ($n\ge30$? $\sigma$ znane? $X\sim N$?) są opisane w [[Wzory - estymacja#Przedział dla średniej]] i [[Wzory - estymacja#Który wzór]]. Slajd definiuje też liczby: dla $U\sim N(0;1)$ jest $P(-u_\gamma<U<u_\gamma)=\gamma$, a dla $T\sim t_{n-1}$ jest $P(-t_\gamma<T<t_\gamma)=\gamma$.
+- **Wariancje:** $S^2=\dfrac{1}{n}\sum(X_i-\text{Xsr})^2$ oraz $\hat S^2=\dfrac{1}{n-1}\sum(X_i-\text{Xsr})^2=\dfrac{n}{n-1}S^2$. Wzory 2 i 3 używają $S$ (dzielnik $n$), a w treści zadań podane "S^" to $\hat S$ (dzielnik $n-1$). Stąd przeliczenie $S=\hat S\sqrt{(n-1)/n}$.
+- **Frakcja (zad.6):** $P\left\{\hat P-u_\gamma\sqrt{\dfrac{\hat P(1-\hat P)}{n}}\le p\le\hat P+u_\gamma\sqrt{\dfrac{\hat P(1-\hat P)}{n}}\right\}=\gamma$, gdzie $P(|U_n|\le u_\gamma)=\gamma$, $U_n\sim N(0;1)$.
 
 ## Rozwiązanie krok po kroku
 
 ### Zad.1
-1. Który wzór: n = 36 >= 30, sigma znane -> **wzór 1** (można też z n < 30 przy rozkładzie normalnym).
-2. u_gamma = kwantyl N(0,1) rzędu 0,975 = **1,9600**.
-3. Błąd = u * sigma / pierwiastek(n) = 1,96 * 8 / 6 = **2,6133**.
-4. Przedział: 20 - 2,6133 = **17,3867** i 20 + 2,6133 = **22,6133** (%).
-5. delta = (22,6133 - 17,3867) / 2 = **2,6133** p.p.
-6. wdelta = 2,6133 / 20 = **0,1307** (13,07%).
+*Fundusze "small fry": średnie dyskonto 20%, sigma = 8%, n = 36. Przedział dla średniej wartości dyskonta.*
+
+1. Wybór wzoru: $\sigma$ znane, $n=36\ge30$, więc **wzór 1**.
+2. Kwantyl: $\gamma=0{,}95$, rząd $0{,}975$, więc $u_\gamma=1{,}9600$.
+3. Błąd: $u_\gamma\dfrac{\sigma}{\sqrt n}=1{,}9600\cdot\dfrac{8}{6}=2{,}6133$.
+4. Przedział: $20-2{,}6133=17{,}3867$ oraz $20+2{,}6133=22{,}6133$, czyli $(17{,}39\%;\ 22{,}61\%)$.
+5. Precyzja: $\Delta=\dfrac{22{,}6133-17{,}3867}{2}=2{,}6133$ p.p.
+6. Względna: $\delta=\dfrac{2{,}6133}{20}=0{,}1307$ (13,07%).
 
 ### Zad.2
-1. n = 15 < 30, rozkład normalny, sigma nieznane -> **wzór 3** (t-Studenta, 14 stopni swobody).
-2. S (dzielnik n) = pierwiastek(14/15) * 3,5 = **3,3813**.
-3. gamma = 0,92, więc dwustronne alfa = 0,08; t_gamma = **1,8875**.
-4. Błąd = t * S / pierwiastek(n-1) = 1,8875 * 3,3813 / pierwiastek(14) = **1,7057**.
-5. Przedział: 10,37 - 1,7057 = **8,6643**, 10,37 + 1,7057 = **12,0757** (%).
-6. delta = **1,7057**; wdelta = 1,7057 / 10,37 = **0,1645** (16,45%).
+*Stopa zwrotu akcji: n = 15, xsr = 10,37%, S^ = 3,5%, 92%.*
+
+1. Wybór wzoru: $n=15<30$, rozkład normalny, $\sigma$ nieznane, więc **wzór 3** ($t$-Studenta, $n-1=14$ stopni swobody).
+2. Odchylenie z dzielnikiem $n$: $S=\hat S\sqrt{\dfrac{14}{15}}=3{,}5\cdot0{,}9661=3{,}3813$.
+3. Kwantyl: $\gamma=0{,}92$, więc dwustronne $1-\gamma=0{,}08$, $t_\gamma=1{,}8875$ (to samo co kwantyl rzędu 0,96).
+4. Błąd: $t_\gamma\dfrac{S}{\sqrt{n-1}}=1{,}8875\cdot\dfrac{3{,}3813}{\sqrt{14}}=1{,}7057$.
+5. Przedział: $10{,}37-1{,}7057=8{,}6643$ oraz $10{,}37+1{,}7057=12{,}0757$, czyli $(8{,}66\%;\ 12{,}08\%)$.
+6. Precyzja: $\Delta=1{,}7057$ p.p.; względna $\delta=\dfrac{1{,}7057}{10{,}37}=0{,}1645$ (16,45%).
 
 ### Zad.4
-a) gamma = 0,95
-1. n = 165 >= 30, sigma nieznane -> **wzór 2** (u z N(0,1)).
-2. S = pierwiastek(164/165) * 5542 = **5525,18**.
-3. u = **1,9600**; błąd = 1,96 * 5525,18 / pierwiastek(165) = **843,05**.
-4. Przedział: **(15 686,95; 17 373,05)**.
-5. delta = **843,05**; wdelta = 843,05 / 16 530 = **0,0510** (5,10%).
+*Odszkodowania: n = 165, xsr = 16 530, S^ = 5542. Przedziały dla 95% i 99%.*
 
-b) gamma = 0,99
-1. u = kwantyl rzędu 0,995 = **2,5758**.
-2. Błąd = 2,5758 * 5525,18 / pierwiastek(165) = **1107,95**.
-3. Przedział: **(15 422,05; 17 637,95)**.
-4. delta = **1107,95**; wdelta = **0,0670** (6,70%).
+Wspólne kroki: $n=165\ge30$, $\sigma$ nieznane, więc **wzór 2**. $S=\hat S\sqrt{\dfrac{164}{165}}=5525{,}18$.
+
+**a) $\gamma=0{,}95$**
+1. $u_\gamma=1{,}9600$ (rząd 0,975).
+2. Błąd: $1{,}9600\cdot\dfrac{5525{,}18}{\sqrt{165}}=843{,}05$.
+3. Przedział: $(15\,686{,}95;\ 17\,373{,}05)$.
+4. $\Delta=843{,}05$; $\delta=\dfrac{843{,}05}{16\,530}=0{,}0510$ (5,10%).
+
+**b) $\gamma=0{,}99$**
+1. $u_\gamma=2{,}5758$ (rząd 0,995).
+2. Błąd: $2{,}5758\cdot\dfrac{5525{,}18}{\sqrt{165}}=1107{,}95$.
+3. Przedział: $(15\,422{,}05;\ 17\,637{,}95)$.
+4. $\Delta=1107{,}95$; $\delta=0{,}0670$ (6,70%).
 
 ### Zad.6
-1. phat = 34 / 100 = **0,34**.
-2. u = **1,9600**.
-3. Błąd = u * pierwiastek(phat(1-phat)/n) = 1,96 * pierwiastek(0,34*0,66/100) = 1,96 * 0,04737 = **0,09285**.
-4. Przedział: **(0,2472; 0,4328)**.
-5. delta = **0,0928**; wdelta = 0,0928 / 0,34 = **0,2731** (27,3%).
+*Udział produktu zagranicznego: 34 z 100, 95%.*
+
+1. Frakcja: $\hat p=\dfrac{34}{100}=0{,}34$.
+2. Kwantyl: $u_\gamma=1{,}9600$.
+3. Błąd średni frakcji: $\sqrt{\dfrac{0{,}34\cdot0{,}66}{100}}=0{,}04737$; błąd graniczny: $1{,}9600\cdot0{,}04737=0{,}09285$.
+4. Przedział: $0{,}34-0{,}0928=0{,}2472$ oraz $0{,}34+0{,}0928=0{,}4328$, czyli $(0{,}2472;\ 0{,}4328)$.
+5. $\Delta=0{,}0928$; $\delta=\dfrac{0{,}0928}{0{,}34}=0{,}2731$ (27,3%).
 
 ## Wzory
-Pełna legenda: [[Wzory - estymacja#Przedział dla średniej]], [[Wzory - estymacja#Przedział dla frakcji]], [[Wzory - estymacja#Wskaźnik precyzji]].
+Legenda: [[Wzory - estymacja#Przedział dla średniej]], [[Wzory - estymacja#Przedział dla frakcji]], [[Wzory - estymacja#Wskaźnik precyzji]].
 
-**Przedział dla średniej, sigma znane (Zad.1)**
-- ogólny: `xsr +- u_gamma * sigma / pierwiastek(n)`
-- z liczbami: `20 +- 1,9600 * 8 / pierwiastek(36) = 20 +- 2,6133`
-- Excel PL: `=20-B10*8/6` oraz `=20+B10*8/6`, gdzie `B10 = ROZKŁ.NORMALNY.S.ODWR(0,975)` (w pliku `NORM.S.INV(0,975)`)
-
-**Przedział dla średniej, wzór 3 (Zad.2)**
-- ogólny: `xsr +- t_gamma * S / pierwiastek(n-1)`, `S = pierwiastek((n-1)/n) * Shat`
-- z liczbami: `10,37 +- 1,8875 * 3,3813 / pierwiastek(14) = 10,37 +- 1,7057`
-- Excel PL: `S: =PIERWIASTEK(14/15)*3,5`; `t: =ROZKŁ.T.ODWR.DS(0,08;14)` (w pliku `TINV(0,08;14)`); `=10,37-B8*B7/PIERWIASTEK(14)`, `=10,37+B8*B7/PIERWIASTEK(14)`
-
-**Przedział dla średniej, wzór 2 (Zad.4)**
-- ogólny: `xsr +- u_gamma * S / pierwiastek(n)`
-- z liczbami: `16530 +- 1,9600 * 5525,18 / pierwiastek(165) = 16530 +- 843,05`
-- Excel PL: `=PIERWIASTEK(164/165)*5542`, `=16530-B8*B7/PIERWIASTEK(165)`, `=16530+B8*B7/PIERWIASTEK(165)`; dla 99%: `ROZKŁ.NORMALNY.S.ODWR(0,995)`
-
-**Przedział dla frakcji (Zad.6)**
-- ogólny: `phat +- u_gamma * pierwiastek(phat(1-phat)/n)`
-- z liczbami: `0,34 +- 1,96 * pierwiastek(0,34*0,66/100) = 0,34 +- 0,0928`
-- Excel PL: `=34/100`, `=B5-B6*PIERWIASTEK(B5*(1-B5)/100)`, `=B5+B6*PIERWIASTEK(B5*(1-B5)/100)`
-
-**Wskaźniki precyzji (wszystkie zad.)**
-- ogólny: `delta = (T2 - T1)/2`, `wdelta = delta / estymator`
-- z liczbami (Zad.6): `(0,4328 - 0,2472)/2 = 0,0928`, `0,0928/0,34 = 0,2731`
-- Excel PL: `=(C7-B7)/2`, `=B8/B5`
+| Zad. | Ogólny wzór | Z liczbami | Excel |
+|---|---|---|---|
+| 1 | $\text{xsr}\pm u_\gamma\frac{\sigma}{\sqrt n}$ | $20\pm1{,}96\cdot\frac{8}{6}=20\pm2{,}6133$ | `u: =ROZKŁ.NORMALNY.S.ODWR(0,975)`; `=20-B10*8/6` i `=20+B10*8/6` |
+| 2 | $\text{xsr}\pm t_\gamma\frac{S}{\sqrt{n-1}}$ | $10{,}37\pm1{,}8875\cdot\frac{3{,}3813}{\sqrt{14}}$ | `S: =PIERWIASTEK(14/15)*3,5`; `t: =ROZKŁ.T.ODWR.DS(0,08;14)`; `=10,37-B8*B7/PIERWIASTEK(14)` i `+` |
+| 4 | $\text{xsr}\pm u_\gamma\frac{S}{\sqrt n}$ | $16530\pm1{,}96\cdot\frac{5525{,}18}{\sqrt{165}}$ | `S: =PIERWIASTEK(164/165)*5542`; `=16530-B8*B7/PIERWIASTEK(165)` i `+`; dla 99%: `ROZKŁ.NORMALNY.S.ODWR(0,995)` |
+| 6 | $\hat p\pm u_\gamma\sqrt{\frac{\hat p(1-\hat p)}{n}}$ | $0{,}34\pm1{,}96\sqrt{\frac{0{,}34\cdot0{,}66}{100}}$ | `=34/100`; `=B5-B6*PIERWIASTEK(B5*(1-B5)/100)` i `+` |
+| precyzja | $\Delta=\frac{T_2-T_1}{2}$, $\delta=\frac{\Delta}{\text{estymator}}$ | zad.6: $\frac{0{,}4328-0{,}2472}{2}=0{,}0928$, $\frac{0{,}0928}{0{,}34}=0{,}2731$ | `=(C7-B7)/2`; `=B8/B5` |
 
 ## Dlaczego tak
-- **Wzór 1 (sigma znane):** gdy znamy sigma, standaryzowana średnia ma rozkład N(0,1), więc używamy kwantyla u. Słowa-klucze: "wiemy, że sigma = ...".
-- **Wzór 3 (sigma nieznane, mała próba):** gdy sigma wstawiamy z próby, a n jest małe, rozkład ma "grubsze ogony" (t-Studenta, n-1 stopni swobody), więc kwantyl t jest większy niż u. Słowa-klucze: "S^ = ...", "rozkład normalny", małe n.
-- **Wzór 2 (sigma nieznane, duża próba):** dla n >= 30 rozkład t jest praktycznie równy N(0,1), więc zamiast t bierzemy u. Słowa-klucze: "S^ = ...", n >= 30.
-- **Przedział dla frakcji:** przy dużym n frakcja z próby ma w przybliżeniu rozkład normalny. Słowa-klucze: "udział", "ile osób z ... kupuje".
-- **delta i wdelta:** delta to maksymalny błąd oszacowania w jednostkach danych, wdelta mówi, jaki to ułamek estymatora (porównywalny między zadaniami). Słowa-klucze: "wskaźnik precyzji estymacji".
-- **Wyższy poziom ufności (zad.4b):** większe gamma -> większy kwantyl -> szerszy przedział i mniejsza precyzja.
+- **Wzór 1 ($\sigma$ znane):** gdy znamy $\sigma$, standaryzowana średnia ma rozkład $N(0;1)$, więc bierzemy kwantyl $u$. Słowa-klucze: "wiemy, że sigma = ...".
+- **Wzór 3 ($\sigma$ nieznane, mała próba):** gdy $\sigma$ zastępujemy wartością z próby, a $n$ jest małe, rozkład ma "grubsze ogony" ($t$-Studenta z $n-1$ stopniami swobody), więc $t_\gamma>u_\gamma$. Słowa-klucze: "S^ = ...", "rozkład normalny", małe $n$.
+- **Wzór 2 ($\sigma$ nieznane, duża próba):** dla $n\ge30$ rozkład $t$ jest praktycznie równy $N(0;1)$, więc bierzemy $u$. Słowa-klucze: "S^ = ...", duże $n$.
+- **Frakcja:** przy dużym $n$ frakcja z próby ma w przybliżeniu rozkład normalny. Słowa-klucze: "udział", "ile osób z ... kupuje".
+- **$\Delta$ i $\delta$:** $\Delta$ to największy błąd oszacowania w jednostkach danych; $\delta$ pokazuje, jaką część estymatora on stanowi (porównywalne między zadaniami).
+- **Zad.4b:** wyższe $\gamma$ daje większy kwantyl, więc szerszy przedział i mniejszą precyzję.
 
 ## Interpretacja
-- **Zad.1:** "Z ufnością 95% przedział (17,39%; 22,61%) pokrywa nieznaną średnią wartość dyskonta w populacji funduszy. Wskaźnik precyzji wynosi 2,61 p.p., czyli 13,07% średniej oszacowania."
-- **Zad.2:** "Z ufnością 92% przeciętna stopa zwrotu z akcji zawiera się w przedziale (8,66%; 12,08%). Precyzja oszacowania to 1,71 p.p. (16,45%)."
-- **Zad.4:** "Z ufnością 95% przeciętne żądane odszkodowanie mieści się w przedziale (15 687; 17 373), a z ufnością 99% w szerszym (15 422; 17 638); wyższa ufność = mniejsza precyzja (5,1% vs 6,7%)."
-- **Zad.6:** "Z ufnością 95% udział produktów zagranicznych w rynku wynosi od 24,7% do 43,3%; przedział jest szeroki (wdelta = 27,3%), bo próba to tylko 100 osób."
-- Standardowa fraza: "przedział ufności pokrywa nieznaną wartość parametru z prawdopodobieństwem gamma" (nie: "parametr leży w przedziale z prawdopodobieństwem gamma").
+- **Zad.1:** "Z ufnością 95% przedział (17,39%; 22,61%) pokrywa nieznaną średnią wartość dyskonta w populacji funduszy. Wskaźnik precyzji to 2,61 p.p., czyli 13,07% oszacowania."
+- **Zad.2:** "Z ufnością 92% przeciętna stopa zwrotu z akcji mieści się w przedziale (8,66%; 12,08%). Precyzja: 1,71 p.p. (16,45%)."
+- **Zad.4:** "Z ufnością 95% przeciętne żądane odszkodowanie mieści się w (15 687; 17 373), a z ufnością 99% w szerszym (15 422; 17 638). Wyższa ufność oznacza mniejszą precyzję (5,1% kontra 6,7%)."
+- **Zad.6:** "Z ufnością 95% udział produktu zagranicznego w rynku to od 24,7% do 43,3%. Przedział jest szeroki ($\delta=27{,}3\%$), bo próba liczy tylko 100 osób."
+- Poprawna fraza: "przedział ufności pokrywa nieznaną wartość parametru z prawdopodobieństwem $\gamma$" (nie: "parametr leży w przedziale z prawdopodobieństwem $\gamma$").
 
 ## Pułapki
-- **Dobór wzoru:** zacznij od schematu ([[Wzory - estymacja#Który wzór]]): n >= 30?, sigma znane?, rozkład normalny?
-- **n kontra n-1 w S:** w wzorze 3 jest S/pierwiastek(n-1) z S o dzielniku n; w treści zadań "S^" to zwykle Shat (dzielnik n-1). Dlatego w arkuszu najpierw przeliczono `S = pierwiastek((n-1)/n) * Shat`. Równoważnie: `t * Shat / pierwiastek(n)`.
-- **Zad.2 vs Zad.4:** Zad.2 dzieli przez pierwiastek(n-1) (wzór 3), Zad.4 przez pierwiastek(n) (wzór 2 ze slajdu). To nie błąd, to dwa różne wzory. Gdyby w Zad.4 użyć Shat/pierwiastek(n), wyjdzie błąd 845,61 zamiast 843,05, czyli przedział (15 684,39; 17 375,61): przy n = 165 różnica jest nieistotna, ale na egzaminie trzymaj się wzoru z wykładu.
-- **TINV kontra T.INV:** `TINV(0,08;14)` bierze dwustronne alfa (1-gamma), a `T.INV(0,975;14)` lewostronne (1-alfa/2). Pomylenie argumentu daje zły kwantyl.
-- **Kwantyl dla gamma:** zawsze (1+gamma)/2: dla 95% -> 0,975, dla 99% -> 0,995, dla 92% -> 0,96.
-- **wdelta:** dzielimy przez estymator (xsr lub phat), nie przez delta.
-- **Procenty:** w zad.1 i 2 wyniki są w %, więc delta w p.p.
+- **Dobór wzoru:** zacznij od schematu ([[Wzory - estymacja#Który wzór]]): $n\ge30$?, $\sigma$ znane?, rozkład normalny?
+- **$n$ czy $n-1$ w $S$:** we wzorze 3 jest $S/\sqrt{n-1}$ z $S$ o dzielniku $n$, a w treści "S^" to $\hat S$ (dzielnik $n-1$). Stąd w arkuszu najpierw $S=\hat S\sqrt{(n-1)/n}$. Równoważnie: $t\cdot\hat S/\sqrt n$.
+- **Zad.2 kontra Zad.4:** zad.2 dzieli przez $\sqrt{n-1}$ (wzór 3), zad.4 przez $\sqrt n$ (wzór 2 ze slajdu). To nie błąd, tylko dwa różne wzory. Gdyby w zad.4 użyć $\hat S/\sqrt n$, wyjdzie błąd 845,61 zamiast 843,05, przedział (15 684,39; 17 375,61). Przy $n=165$ różnica jest nieistotna, ale na egzaminie trzymaj się wzoru z wykładu.
+- **Argument funkcji $t$:** funkcja z argumentem dwustronnym przyjmuje $1-\gamma$ (0,08), a z jednostronnym $\frac{1+\gamma}{2}$ (0,96). Pomylenie daje zły kwantyl.
+- **Kwantyl dla $\gamma$:** zawsze rząd $\frac{1+\gamma}{2}$ (95% -> 0,975; 99% -> 0,995; 92% -> 0,96).
+- **$\delta$:** dzielimy przez estymator ($\text{xsr}$ albo $\hat p$), nie przez $\Delta$.
+- **Jednostki:** w zad.1 i 2 wyniki są w procentach, więc $\Delta$ w punktach procentowych.
